@@ -16,7 +16,7 @@ steps:
         echo "{\"timestamp\": \"$$(date -u +'%Y-%m-%dT%H:%M:%SZ')\", \"version\": \"$$SHORT_SHA-$$TIMESTAMP\"}" > data/data/metadata.json
 
   commit-data:
-    image: bitnami/git
+    image: alpine/git
     environment:
       CB_TOKEN:
         from_secret: cb_token
@@ -24,7 +24,7 @@ steps:
       - git config --global user.name "Woodpecker CI"
       - git config --global user.email "ci@codeberg.org"
       - git config --global --add safe.directory '*'
-      - git remote set-url origin https://$CB_TOKEN@codeberg.org/chric/rhygfuehl.git
+      - git remote set-url origin https://chric:$CB_TOKEN@codeberg.org/chric/rhygfuehl.git
       - git add data/data/*.json
       - git diff --quiet && git diff --staged --quiet || (git commit -m "cron data update [skip ci]" && git push origin main)
 
@@ -35,7 +35,7 @@ steps:
       - npm run build
 
   deploy-pages:
-    image: bitnami/git
+    image: alpine/git
     environment:
       CB_TOKEN:
         from_secret: cb_token
@@ -43,10 +43,11 @@ steps:
       - git config --global user.name "Woodpecker CI"
       - git config --global user.email "ci@codeberg.org"
       - git config --global --add safe.directory '*'
-      - git clone --branch pages https://$CB_TOKEN@codeberg.org/chric/rhygfuehl.git output
+      - git clone --branch pages https://chric:$CB_TOKEN@codeberg.org/chric/rhygfuehl.git output
       - rm -rf output/*
       - cp -r dist/* output/
       - cd output
       - git add .
       - git diff --quiet && git diff --staged --quiet || git commit -m "Deploy pages"
       - git push origin pages
+
