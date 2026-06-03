@@ -15,9 +15,9 @@
 
 The application uses **Astro** for pre-rendering a static site with extreme SEO optimization and zero baseline JavaScript. 
 
-Every 15 minutes, a GitHub Actions cron job triggers the `data/aggregation.py` script to fetch the latest Rhine temperatures and water levels from the Open Data Basel-Stadt APIs. The script writes this data into static JSON files. 
+Every 15 minutes, a Woodpecker CI cron job triggers the `data/aggregation.py` script to fetch the latest Rhine temperatures and water levels from the Open Data Basel-Stadt APIs. The script writes this data into static JSON files. 
 
-Immediately after fetching, the GitHub Action builds the Astro site, directly injecting the latest temperatures into the HTML `<meta name="description">` tags for immediate SEO indexing, and then deploys to GitHub Pages.
+Immediately after fetching, the Woodpecker CI pipeline builds the Astro site, directly injecting the latest temperatures into the HTML `<meta name="description">` tags for immediate SEO indexing, and then deploys to Codeberg Pages.
 
 ## Local Development
 
@@ -70,7 +70,7 @@ Tests are automatically executed on every Pull Request to `master` and must pass
 ## Contributing
 
 Contributions, issues and feature requests are welcome!
-Feel free to check [the issues page](https://github.com/chrisrickenbacher/rhygfuehl/issues).
+Feel free to check [the issues page](https://codeberg.org/chric/rhygfuehl/issues).
 
 ## License
 

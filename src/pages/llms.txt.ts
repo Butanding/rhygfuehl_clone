@@ -51,8 +51,8 @@ The swimming recommendation is calculated by assessing two independent indices:
 
 ## Links
 
-- [Project on GitHub](https://github.com/chrisrickenbacher/rhygfuehl): The source code for rhygfuehl.ch.
-- [Prognosis Logic](https://github.com/chrisrickenbacher/rhygfuehl/blob/master/docs/prognosis-logic.md): Detailed documentation on how the swimming prognosis is calculated.
+- [Project on Codeberg](https://codeberg.org/chric/rhygfuehl): The source code for rhygfuehl.ch.
+- [Prognosis Logic](https://codeberg.org/chric/rhygfuehl/src/branch/main/docs/prognosis-logic.md): Detailed documentation on how the swimming prognosis is calculated.
 `;
 
 	return new Response(content, {
