@@ -44,9 +44,9 @@ steps:
       - git config --global user.email "ci@codeberg.org"
       - git config --global --add safe.directory '*'
       - git clone --branch pages https://chric:$CB_TOKEN@codeberg.org/chric/rhygfuehl.git output
-      - rm -rf output/* output/.[!.]* output/..?*
-      - cp -a dist/. output/
       - cd output
+      - find . -maxdepth 1 ! -name '.' ! -name '..' ! -name '.git' -exec rm -rf {} +
+      - cp -a ../dist/. .
       - git add .
       - git diff --quiet && git diff --staged --quiet || git commit -m "Deploy pages"
       - git push origin pages
