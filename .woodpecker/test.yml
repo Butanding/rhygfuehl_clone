@@ -1,0 +1,19 @@
+when:
+  - event: pull_request
+  - event: push
+    branch: main
+
+steps:
+  test-frontend:
+    image: node:24
+    commands:
+      - npm ci
+      - npm run test:unit
+      - npx playwright install --with-deps
+      - npm run test:e2e
+
+  test-backend:
+    image: python:3
+    commands:
+      - pip install -r ./data/requirements.txt
+      - PYTHONPATH=./data pytest tests/backend/ --junitxml=test-results/pytest-results.xml
