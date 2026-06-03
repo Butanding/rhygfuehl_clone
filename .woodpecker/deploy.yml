@@ -12,7 +12,8 @@ steps:
       - python ./data/aggregation.py
       - SHORT_SHA=$$(git rev-parse --short HEAD)
       - TIMESTAMP=$$(date -u +'%Y%m%d-%H%M')
-      - echo "{\"timestamp\": \"$$(date -u +'%Y-%m-%dT%H:%M:%SZ')\", \"version\": \"$$SHORT_SHA-$$TIMESTAMP\"}" > data/data/metadata.json
+      - >
+        echo "{\"timestamp\": \"$$(date -u +'%Y-%m-%dT%H:%M:%SZ')\", \"version\": \"$$SHORT_SHA-$$TIMESTAMP\"}" > data/data/metadata.json
 
   commit-data:
     image: bitnami/git
