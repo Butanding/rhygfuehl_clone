@@ -94,6 +94,21 @@ const datasetSchema = {
 
 		<!-- Umami Cloud Tracking -->
 		<script defer src="https://cloud.umami.is/script.js" data-website-id="209370c3-c631-4cef-80f2-6fe9a59e45e4"></script>
+
+		<!-- Active Kill Switch for Stale Service Workers -->
+		<script is:inline>
+			if ('serviceWorker' in navigator) {
+				navigator.serviceWorker.getRegistrations().then(function(registrations) {
+					for(let registration of registrations) {
+						registration.unregister().then(function(boolean) {
+							if (boolean) {
+								window.location.reload(true);
+							}
+						});
+					}
+				});
+			}
+		</script>
 	</head>
 	<body class="min-h-screen bg-white dark:bg-darkblue text-darkblue dark:text-white transition-colors duration-300 antialiased">
 		<header class="max-w-screen-md mx-auto px-5 pt-8 flex items-center justify-between">
