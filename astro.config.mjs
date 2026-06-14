@@ -7,7 +7,7 @@ export default defineConfig({
   integrations: [
     icon(),
     AstroPWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       manifest: {
         name: 'rhygfuehl',
         short_name: 'rhygfuehl',
@@ -35,8 +35,6 @@ export default defineConfig({
         ],
       },
       workbox: {
-        skipWaiting: true,
-        clientsClaim: true,
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,jpg,jpeg,gif,webp,woff,woff2,ttf,eot,ico,webmanifest}'],
         navigateFallback: null,

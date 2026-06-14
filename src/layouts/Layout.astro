@@ -95,20 +95,7 @@ const datasetSchema = {
 		<!-- Umami Cloud Tracking -->
 		<script defer src="https://cloud.umami.is/script.js" data-website-id="209370c3-c631-4cef-80f2-6fe9a59e45e4"></script>
 
-		<!-- Active Kill Switch for Stale Service Workers -->
-		<script is:inline>
-			if ('serviceWorker' in navigator) {
-				navigator.serviceWorker.getRegistrations().then(function(registrations) {
-					for(let registration of registrations) {
-						registration.unregister().then(function(boolean) {
-							if (boolean) {
-								window.location.reload(true);
-							}
-						});
-					}
-				});
-			}
-		</script>
+
 	</head>
 	<body class="min-h-screen bg-white dark:bg-darkblue text-darkblue dark:text-white transition-colors duration-300 antialiased">
 		<header class="max-w-screen-md mx-auto px-5 pt-8 flex items-center justify-between">
@@ -178,30 +165,28 @@ const datasetSchema = {
 		</style>
 		
 		<script>
-			import { Workbox } from 'workbox-window';
+			import { registerSW } from 'virtual:pwa-register';
 
 			const toast = document.getElementById('pwa-toast');
 			const refreshBtn = document.getElementById('pwa-refresh');
 			const closeBtn = document.getElementById('pwa-close');
 
-			if ('serviceWorker' in navigator) {
-				const wb = new Workbox('/sw.js');
-
-				wb.addEventListener('waiting', () => {
+			const updateSW = registerSW({
+				onNeedRefresh() {
 					toast?.classList.remove('translate-y-[200%]');
-				});
+				},
+				onOfflineReady() {
+					console.log('App is ready to work offline.');
+				},
+			});
 
-				refreshBtn?.addEventListener('click', () => {
-					wb.addEventListener('controlling', () => {
-						window.location.reload();
-					});
-					wb.messageSkipWaiting();
-				});
+			refreshBtn?.addEventListener('click', () => {
+				if (updateSW) updateSW(true);
+			});
 
-				closeBtn?.addEventListener('click', () => toast?.classList.add('translate-y-[200%]'));
-
-				wb.register();
-			}
+			closeBtn?.addEventListener('click', () => {
+				toast?.classList.add('translate-y-[200%]');
+			});
 		</script>
 
 		<script is:inline>
