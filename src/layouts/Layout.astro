@@ -124,21 +124,7 @@ const datasetSchema = {
 		</main>
 		<Footer t={t} lang={lang} />
 
-		<!-- PWA Update Prompt -->
-		<div id="pwa-toast" class="fixed bottom-0 right-0 m-6 p-4 rounded-2xl bg-white dark:bg-darkblue border border-darkblue/10 dark:border-white/10 shadow-2xl translate-y-[200%] transition-transform duration-500 z-50 flex flex-col gap-3 min-w-[280px]" role="alert">
-			<div class="flex items-center gap-3">
-				<Icon name="refresh" class="w-5 h-5 text-blue-500" />
-				<span class="text-sm font-bold">{lang === 'de' ? 'Neue Daten verfügbar' : 'New data available'}</span>
-			</div>
-			<div class="flex gap-2">
-				<button id="pwa-refresh" class="flex-1 bg-darkblue dark:bg-white text-white dark:text-darkblue px-4 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-opacity">
-					{lang === 'de' ? 'Aktualisieren' : 'Refresh'}
-				</button>
-				<button id="pwa-close" class="px-4 py-2 border border-darkblue/10 dark:border-white/10 rounded-xl text-xs font-bold opacity-50 hover:opacity-100 transition-opacity">
-					{lang === 'de' ? 'Schliessen' : 'Close'}
-				</button>
-			</div>
-		</div>
+		<!-- PWA automatic updates enabled -->
 
 		<style is:global>
 			@font-face {
@@ -166,27 +152,7 @@ const datasetSchema = {
 		
 		<script>
 			import { registerSW } from 'virtual:pwa-register';
-
-			const toast = document.getElementById('pwa-toast');
-			const refreshBtn = document.getElementById('pwa-refresh');
-			const closeBtn = document.getElementById('pwa-close');
-
-			const updateSW = registerSW({
-				onNeedRefresh() {
-					toast?.classList.remove('translate-y-[200%]');
-				},
-				onOfflineReady() {
-					console.log('App is ready to work offline.');
-				},
-			});
-
-			refreshBtn?.addEventListener('click', () => {
-				if (updateSW) updateSW(true);
-			});
-
-			closeBtn?.addEventListener('click', () => {
-				toast?.classList.add('translate-y-[200%]');
-			});
+			registerSW({ immediate: true });
 		</script>
 
 		<script is:inline>

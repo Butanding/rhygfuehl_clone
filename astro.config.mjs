@@ -7,7 +7,7 @@ export default defineConfig({
   integrations: [
     icon(),
     AstroPWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       manifest: {
         name: 'rhygfuehl',
         short_name: 'rhygfuehl',
@@ -36,9 +36,20 @@ export default defineConfig({
       },
       workbox: {
         cleanupOutdatedCaches: true,
-        globPatterns: ['**/*.{js,css,html,svg,png,jpg,jpeg,gif,webp,woff,woff2,ttf,eot,ico,webmanifest}'],
+        globPatterns: ['**/*.{js,css,svg,png,jpg,jpeg,gif,webp,woff,woff2,ttf,eot,ico,webmanifest}'],
         navigateFallback: null,
         runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pages-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24, // 24 hours
+              },
+            },
+          },
           {
             urlPattern: /^https:\/\/data\.bs\.ch\/api\/.*$/,
             handler: 'NetworkFirst',
