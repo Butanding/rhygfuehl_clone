@@ -1,4 +1,3 @@
-# test
 when:
   - event: cron
     cron: data-update
@@ -25,7 +24,7 @@ steps:
       - git config --global user.name "Woodpecker CI"
       - git config --global user.email "ci@codeberg.org"
       - git config --global --add safe.directory '*'
-      - git remote set-url origin https://chric:$CB_TOKEN@codeberg.org/chric/rhygfuehl.git
+      - git remote set-url origin https://chric:$CB_TOKEN@codeberg.org/$CI_REPO.git
       - git add data/data/*.json
       - git diff --quiet && git diff --staged --quiet || (git commit -m "cron data update [skip ci]" && git pull --rebase origin main && git push origin main)
 
@@ -44,7 +43,7 @@ steps:
       - git config --global user.name "Woodpecker CI"
       - git config --global user.email "ci@codeberg.org"
       - git config --global --add safe.directory '*'
-      - git clone --branch pages https://chric:$CB_TOKEN@codeberg.org/chric/rhygfuehl.git output
+      - git clone --branch pages https://chric:$CB_TOKEN@codeberg.org/$CI_REPO.git output
       - cd output
       - find . -maxdepth 1 ! -name '.' ! -name '..' ! -name '.git' -exec rm -rf {} +
       - cp -a ../dist/. .
