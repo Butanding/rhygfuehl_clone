@@ -1,10 +1,26 @@
-when:
-  - event: cron
-    cron: data-update
-  - event: push
-    branch: main
-
 steps:
+  test-frontend:
+    image: node:24
+    commands:
+      - npm ci
+      - npm run test:unit
+      - npx playwright install --with-deps
+      - npm run test:e2e
+    when:
+      - event: pull_request
+      - event: push
+        branch: main
+
+  test-backend:
+    image: python:3
+    commands:
+      - pip install -r ./data/requirements.txt
+      - PYTHONPATH=./data pytest tests/backend/ --junitxml=test-results/pytest-results.xml
+    when:
+      - event: pull_request
+      - event: push
+        branch: main
+
   fetch-data:
     image: python:3
     commands:
@@ -14,6 +30,9 @@ steps:
       - TIMESTAMP=$$(date -u +'%Y%m%d-%H%M')
       - >
         echo "{\"timestamp\": \"$$(date -u +'%Y-%m-%dT%H:%M:%SZ')\", \"version\": \"$$SHORT_SHA-$$TIMESTAMP\"}" > data/data/metadata.json
+    when:
+      - event: cron
+        cron: data-update
 
   commit-data:
     image: alpine/git
@@ -27,12 +46,20 @@ steps:
       - git remote set-url origin https://chric:$CB_TOKEN@codeberg.org/$CI_REPO.git
       - git add data/data/*.json
       - git diff --quiet && git diff --staged --quiet || (git commit -m "cron data update [skip ci]" && git pull --rebase origin main && git push origin main)
+    when:
+      - event: cron
+        cron: data-update
 
   build:
     image: node:24
     commands:
       - npm ci
       - npm run build
+    when:
+      - event: push
+        branch: main
+      - event: cron
+        cron: data-update
 
   deploy-pages:
     image: alpine/git
@@ -50,4 +77,8 @@ steps:
       - git add .
       - git diff --quiet && git diff --staged --quiet || git commit -m "Deploy pages"
       - git push origin pages
-
+    when:
+      - event: push
+        branch: main
+      - event: cron
+        cron: data-update
