@@ -2,6 +2,7 @@
 
 # rhygfuehl.ch
 
+![](https://ci.codeberg.org/api/badges/17670/status.svg)
 
 
 ☀️ rhygfuehl.ch shows the current Rhine temperature of Basel in a clear app that can be easily accessed via a web browser. The app also shows a simplified temperature history of the last 12 hours and the current air temperature at Untere Rheingasse.
