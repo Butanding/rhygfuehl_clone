@@ -161,11 +161,13 @@ const datasetSchema = {
 			const htmlLang = (document.documentElement.lang as 'de' | 'en') || 'de';
 			const manifest = getMcpManifest(htmlLang);
 
-			// Progressive enhancement: Browser-native WebMCP registration
-			if (typeof navigator !== 'undefined' && 'modelContext' in navigator && (navigator as any).modelContext?.registerTool) {
+			// Resolve the WebMCP API surface (Chrome 150+ uses document.modelContext)
+			const modelContext = (document as any).modelContext ?? (navigator as any).modelContext;
+
+			if (modelContext?.registerTool) {
 				manifest.tools.forEach((tool) => {
 					try {
-						(navigator as any).modelContext.registerTool({
+						modelContext.registerTool({
 							name: tool.name,
 							description: tool.description,
 							inputSchema: tool.inputSchema,
