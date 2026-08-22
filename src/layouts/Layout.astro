@@ -155,6 +155,33 @@ const datasetSchema = {
 			registerSW({ immediate: true });
 		</script>
 
+		<script>
+			import { getMcpManifest } from '../utils/mcp';
+
+			const htmlLang = (document.documentElement.lang as 'de' | 'en') || 'de';
+			const manifest = getMcpManifest(htmlLang);
+
+			// Progressive enhancement: Browser-native WebMCP registration
+			if (typeof navigator !== 'undefined' && 'modelContext' in navigator && (navigator as any).modelContext?.registerTool) {
+				manifest.tools.forEach((tool) => {
+					try {
+						(navigator as any).modelContext.registerTool({
+							name: tool.name,
+							description: tool.description,
+							inputSchema: tool.inputSchema,
+							execute: tool.execute
+						});
+					} catch (error) {
+						console.warn(`[WebMCP] Failed to register tool "${tool.name}":`, error);
+					}
+				});
+			}
+
+			// Expose global manifest for DevTools / Model Context Inspector
+			(window as any).__webmcp = manifest;
+			(window as any).__webmcp_tools = manifest.tools;
+		</script>
+
 		<script is:inline>
 			document.addEventListener('DOMContentLoaded', () => {
 				const toggles = document.querySelectorAll('.metric-toggle');

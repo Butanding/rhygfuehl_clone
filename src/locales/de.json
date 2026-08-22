@@ -50,5 +50,53 @@
     "seo": {
         "title": "rhygfuehl - Aktuelle Rheintemperatur in Basel",
         "description": "☀️ Die Lufttemperatur am Rhein in Basel ist aktuell %airTemp% °C. Der Rhein hat eine Wassertemperatur von %waterTemp% °C. rhygfuehl.ch zeigt die aktuelle Rheintemperatur von Basel in einer übersichtlichen App."
+    },
+    "mcp": {
+        "tools": {
+            "tempDesc": "Ermittle die aktuellen Messwerte für Wassertemperatur, Lufttemperatur und Pegelstand des Rheins in Basel.",
+            "prognosisDesc": "Ermittle die automatisierte Bade-Empfehlung inklusive mikrobiologischer Wasserqualität und physikalischer Bade-Sicherheit für den Rhein in Basel.",
+            "historyDesc": "Ermittle historische Zeitreihen-Daten für Wassertemperatur, Lufttemperatur, Pegelstand, Niederschlag und Globalstrahlung.",
+            "paramLang": "Sprache für Beschreibungen und Bezeichnungen (de = Deutsch, en = Englisch)",
+            "paramMetric": "Abzufragende Metrik (water = Wassertemperatur, air = Lufttemperatur, level = Pegelstand, quality = Qualitätsfaktoren, all = alle)",
+            "paramPeriod": "Zeitraum der Historie (week = Woche mit 7-14 Datenpunkten, month = Monat mit ~30 Datenpunkten)"
+        },
+        "indices": {
+            "qualityExplanation": "Mikrobiologische Bewertung basierend auf Regen, Mischwasserentlastung und Sonnenstrahlung.",
+            "safetyExplanation": "Physikalisches Risiko basierend auf Wassertemperatur (Kälteschock < 14 °C)."
+        },
+        "prompts": {
+            "advisor": {
+                "name": "swimming_advisor",
+                "title": "Rhine Swimming Advisor (DE)",
+                "description": "Erstelle eine individuelle Empfehlung für das Schwimmen im Rhein in Basel basierend auf aktuellen Live-Bedingungen und Erfahrungsstufe.",
+                "paramExperience": "Erfahrungsstufe des Schwimmers (beginner = Anfänger, experienced = Geübt)",
+                "paramLang": "Sprache für die Antwort (de oder en)",
+                "template": "Du bist ein erfahrener Rheinschwimm- und Wassersicherheits-Experte in Basel, Schweiz.\n\nAktuelle Live-Daten:\n- Wassertemperatur: %waterTemp% °C\n- Lufttemperatur: %airTemp% °C\n- Pegelstand: %waterLevel% m\n- Gesamte Bade-Empfehlung: %prognosisScore%/3 (%prognosisLabel%)\n- Wasserqualität-Index: %qualityScore%/3 (%qualityLabel%)\n- Bade-Sicherheits-Index: %safetyScore%/3 (%safetyLabel%)\n- Schwimmer-Erfahrungsstufe: %experienceLabel%\n\nAufgabe:\nErstelle eine präzise, fundierte Einschätzung zum Rheinschwimmen für den heutigen Tag:\n1. Klares Fazit: Ist das Rheinschwimmen aktuell ratsam?\n2. Temperatur- und Kälteschock-Bewertung (%waterTemp% °C: <14 °C Kälteschock-Gefahr; 14-18 °C Vorsicht; >=18 °C angenehm).\n3. Wasserqualität & Hygiene (Bakterienbelastung nach Regen vs. Desinfektion durch Globalstrahlung).\n4. Wichtige Sicherheitsregeln: Wickelfisch (Schwimmsack), Einstiegsorte (z.B. Solitude / Schaffhauserrheinweg), Ausstieg vor Mittlere Brücke / Dreirosenbrücke, Abstand zur Grossbasler Fahrrinne der Kursschiffe.\n5. Konkrete Ratschläge angepasst an %experienceLabel%."
+            },
+            "report": {
+                "name": "daily_rhine_report",
+                "title": "Daily Rhine River Report (DE)",
+                "description": "Erstelle einen morgendlichen oder täglichen Statusbericht der Rhein-Bedingungen in Basel für Briefings, Newsletter oder Wetter-Bots.",
+                "paramLang": "Sprache für den Bericht (de oder en)",
+                "template": "Erstelle einen kompakten, ansprechenden morgendlichen Rhein-Report für Basel basierend auf den aktuellen Messwerten:\n- Wassertemperatur: %waterTemp% °C\n- Lufttemperatur: %airTemp% °C\n- Pegelstand: %waterLevel% m\n- Letztes Update: %lastUpdate%\n\nFasse das aktuelle Rhygfuehl zusammen und gib einen Ausblick, ob die Bedingungen zu einem Sprung in den Rhein oder einem Spaziergang an der Rheinpromenade einladen."
+            },
+            "safety": {
+                "name": "rhine_safety_briefing",
+                "title": "Rhine Safety Briefing (DE)",
+                "description": "Erstelle ein Sicherheits-Briefing zu physiologischen Risiken (Kälteschock) und mikrobiologischen Richtlinien beim Rheinschwimmen.",
+                "paramLang": "Sprache für das Briefing (de oder en)",
+                "template": "Erstelle ein Sicherheits-Briefing für das Schwimmen im Rhein in Basel unter Berücksichtigung der aktuellen Werte:\n- Wassertemperatur: %waterTemp% °C\n- Pegelstand: %waterLevel% m\n\nBehandle folgende zentrale Sicherheitsaspekte:\n1. Kälteschock-Physiologie (Gefahr des unkontrollierten Einatmens bei unter 14 °C Wassertemperatur).\n2. Die 48-72 Stunden Warte-Empfehlung nach Starkregen (Mischwasserentlastung).\n3. Flussdynamik: Strömungslehre, Brückenpfeiler und Grossbasler Schifffahrtslinie.\n4. Essentielle Baderegeln der Basler Rhein-Kultur (Wickelfisch, Ausstiege)."
+            }
+        },
+        "resources": {
+            "currentName": "Aktueller Umwelt-Zustand des Rheins",
+            "currentDesc": "Vollständiger JSON-Datenzustand für Wassertemperatur, Lufttemperatur, Pegelstand und Bade-Prognose.",
+            "logicName": "Wissenschaftliche Logik der Rheinschwimm-Empfehlung",
+            "logicDesc": "Umfassende Dokumentation des Berechnungsmodells für Regen-Score, Strahlungs-Bonus und Grenzwerte.",
+            "faqName": "Häufig gestellte Fragen zum Rheinschwimmen",
+            "faqDesc": "Strukturierte FAQ-Datenbank zu Temperaturgrenzwerten, Regen-Wartezeiten und Kälteschock-Sicherheit.",
+            "llmsName": "rhygfuehl LLMs.txt Kontextdokument",
+            "llmsDesc": "Kompaktes KI-optimiertes Übersichtsdokument für LLM-Crawler und Suchindizierung."
+        }
     }
 }

@@ -63,4 +63,43 @@ test.describe('Home Page', () => {
     await backLink.click();
     await expect(page).toHaveURL(/\//);
   });
+
+  test('exposes WebMCP manifest with tools, prompts, and resources', async ({ page }) => {
+    // Wait for the client scripts to execute
+    await page.waitForFunction(() => (window as any).__webmcp !== undefined);
+
+    const mcpState = await page.evaluate(async () => {
+      const manifest = (window as any).__webmcp;
+      const tempTool = manifest.tools.find((t: any) => t.name === 'get_rhine_temperature');
+      const tempResult = tempTool ? await tempTool.execute() : null;
+
+      return {
+        hasTools: manifest.tools.length === 3,
+        toolNames: manifest.tools.map((t: any) => t.name),
+        hasPrompts: manifest.prompts.length === 3,
+        promptNames: manifest.prompts.map((p: any) => p.name),
+        hasResources: manifest.resources.length === 4,
+        resourceUris: manifest.resources.map((r: any) => r.uri),
+        tempResultParsed: tempResult ? JSON.parse(tempResult.content[0].text) : null
+      };
+    });
+
+    expect(mcpState.hasTools).toBe(true);
+    expect(mcpState.toolNames).toContain('get_rhine_temperature');
+    expect(mcpState.toolNames).toContain('get_swimming_prognosis');
+    expect(mcpState.toolNames).toContain('get_rhine_history');
+
+    expect(mcpState.hasPrompts).toBe(true);
+    expect(mcpState.promptNames).toContain('swimming_advisor');
+    expect(mcpState.promptNames).toContain('daily_rhine_report');
+    expect(mcpState.promptNames).toContain('rhine_safety_briefing');
+
+    expect(mcpState.hasResources).toBe(true);
+    expect(mcpState.resourceUris).toContain('rhine://basel/current.json');
+    expect(mcpState.resourceUris).toContain('rhine://basel/prognosis-logic.md');
+
+    expect(mcpState.tempResultParsed).toBeDefined();
+    expect(mcpState.tempResultParsed.waterTemperature.unit).toBe('°C');
+  });
 });
+

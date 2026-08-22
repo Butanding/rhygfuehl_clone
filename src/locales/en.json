@@ -50,5 +50,53 @@
     "seo": {
         "title": "rhygfuehl - current Rhine temperature in Basel",
         "description": "☀️ The air temperature at the Rhine in Basel is currently %airTemp% °C. The Rhine in Basel currently has a water temperature of %waterTemp% °C. rhygfuehl.ch shows the current Rhine temperature of Basel in a clear app."
+    },
+    "mcp": {
+        "tools": {
+            "tempDesc": "Retrieve real-time Rhine water temperature, air temperature, and water level in Basel (Switzerland).",
+            "prognosisDesc": "Retrieve the automated Rhine swimming recommendation, including microbiological water quality and physical cold-shock safety indices in Basel.",
+            "historyDesc": "Retrieve historical time-series chart data for water temperature, air temperature, water level, rain, and solar radiation.",
+            "paramLang": "Language for descriptions and labels (de = German, en = English)",
+            "paramMetric": "Metric to retrieve (water = water temperature, air = air temperature, level = water level, quality = quality factors, all = all metrics)",
+            "paramPeriod": "Timeframe duration of history (week = 7-14 data points, month = ~30 data points)"
+        },
+        "indices": {
+            "qualityExplanation": "Microbiological risk based on precipitation, sewer overflows, and solar radiation.",
+            "safetyExplanation": "Physical risk based on water temperature (cold shock response < 14°C)."
+        },
+        "prompts": {
+            "advisor": {
+                "name": "swimming_advisor",
+                "title": "Rhine Swimming Advisor (EN)",
+                "description": "Generate tailored advice for someone planning to swim in the Rhine at Basel based on live conditions and swimmer experience.",
+                "paramExperience": "Experience level of the swimmer (beginner or experienced)",
+                "paramLang": "Language for response (de or en)",
+                "template": "You are an expert local guide and water safety advisor for the Rhine in Basel, Switzerland.\n\nCurrent Live Conditions:\n- Water Temperature: %waterTemp% °C\n- Air Temperature: %airTemp% °C\n- Water Level: %waterLevel% m\n- Overall Swimming Recommendation Score: %prognosisScore%/3 (%prognosisLabel%)\n- Water Quality Index: %qualityScore%/3 (%qualityLabel%)\n- Swimmer Safety Index: %safetyScore%/3 (%safetyLabel%)\n- Swimmer Experience: %experienceLabel%\n\nTask:\nProvide a clear, engaging recommendation for swimming in the Rhine today:\n1. Direct verdict: Is swimming advisable right now?\n2. Temperature & Cold Shock assessment (%waterTemp% °C: note that <14°C is high risk of cold shock; 14-18°C requires caution; >=18°C is comfortable).\n3. Water Quality & Hygiene assessment (bacterial risk from recent rain vs natural UV disinfection).\n4. Safety rules & essential gear: Waterproof swim bag (Wickelfisch), entry at Solitude/Museum Tinguely or Schaffhauserrheinweg, exit points before Kraftwerk Birsfelden or Mittlere Brücke, avoiding shipping lanes on Grossbasel side.\n5. Provide actionable advice tailored to a %experienceLabel% swimmer."
+            },
+            "report": {
+                "name": "daily_rhine_report",
+                "title": "Daily Rhine River Report (EN)",
+                "description": "Generate a morning or daily summary of Rhine river conditions in Basel for briefings, newsletters, or weather bots.",
+                "paramLang": "Language for report (de or en)",
+                "template": "Create a concise, stylish morning Rhine river update for Basel, Switzerland based on the latest metrics:\n- Water Temperature: %waterTemp% °C\n- Air Temperature: %airTemp% °C\n- Water Level: %waterLevel% m\n- Last Data Update: %lastUpdate%\n\nInclude a quick summary of the current feel (rhygfuehl) and whether conditions are inviting for a dip or outdoor walk along the Rhine promenade."
+            },
+            "safety": {
+                "name": "rhine_safety_briefing",
+                "title": "Rhine Safety Briefing (EN)",
+                "description": "Generate a safety briefing detailing physiological risks (cold shock) and microbiological guidelines for swimming in the Rhine.",
+                "paramLang": "Language for briefing (de or en)",
+                "template": "Generate a Rhine Swimming Safety Briefing for Basel considering:\n- Current Water Temperature: %waterTemp% °C\n- Water Level: %waterLevel% m\n\nCover the following critical safety points:\n1. Cold Shock physiology (involuntary gasping when entering water under 14°C).\n2. The 48-72 hour waiting rule after heavy rainfall (sewer overflow contamination risk).\n3. River dynamics: strong currents, bridge pillars, and commercial barge traffic.\n4. Essential river swimming etiquette in Basel."
+            }
+        },
+        "resources": {
+            "currentName": "Current Rhine Environmental State",
+            "currentDesc": "Full JSON state of water temperature, air temperature, water level, and swimming prognosis.",
+            "logicName": "Rhine Swimming Recommendation Scientific Logic",
+            "logicDesc": "Comprehensive scientific model documentation for rain impact scores, radiation bonuses, and safety thresholds.",
+            "faqName": "Rhine Swimming Frequently Asked Questions",
+            "faqDesc": "Structured bilingual FAQ database covering temperature thresholds, rain waiting times, and cold shock safety.",
+            "llmsName": "rhygfuehl LLMs.txt Context Document",
+            "llmsDesc": "Compact AI-optimized summary document for LLM scrapers and search indexing."
+        }
     }
 }
