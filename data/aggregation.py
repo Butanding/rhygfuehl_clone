@@ -15,7 +15,6 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     radiation_window,
     rain_windows,
     series_from_records,
-    water_temp_48h_avg,
 )
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
@@ -157,9 +156,8 @@ def fetch_quality(waterData, now=None):
     rain_inputs = [0 if v is None else v for v in rain_inputs]
 
     waterTempLatest = waterData.get('actualValue', 0)
-    waterTemp48hAvg = water_temp_48h_avg(waterData['chart']['week'], waterTempLatest)
 
-    prognosis = calculate_quality(rain_inputs, rad_inputs, waterTempLatest, waterTemp48hAvg)
+    prognosis = calculate_quality(rain_inputs, rad_inputs, waterTempLatest)
 
     # Charts, oldest -> newest, with the date of every value
     qualityData = {
@@ -174,7 +172,6 @@ def fetch_quality(waterData, now=None):
             'asOf': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
             'rainMm': {'last24h': rain_inputs[0], 'from24to48h': rain_inputs[1], 'from48to72h': rain_inputs[2]},
             'radiationWm2': {'yesterday': rad_inputs[0], 'twoDaysAgo': rad_inputs[1], 'threeDaysAgo': rad_inputs[2]},
-            'waterTemp48hAvg': waterTemp48hAvg,
         },
         'data': [],
     }

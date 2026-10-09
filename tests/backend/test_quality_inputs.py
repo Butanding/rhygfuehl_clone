@@ -16,7 +16,6 @@ from quality import (
     rain_24h_at,
     rain_windows,
     series_from_records,
-    water_temp_48h_avg,
 )
 
 # Real hourly readings of the rain station (rolling 24h sum) from data.bs.ch,
@@ -69,8 +68,8 @@ def test_dry_evening_after_rain_is_rated_better_than_with_old_logic():
     radiation = [173, 121, 165]  # 5, 4 and 3 Oct
 
     # Old logic: maxima of the rolling sum per day [6 Oct, 5 Oct, 4 Oct] = [2.2, 3.0, 1.8]
-    old = calculate_quality([2.2, 3.0, 1.8], radiation, 19.0, 19.0)
-    new = calculate_quality(rain_windows(rain, now), radiation, 19.0, 19.0)
+    old = calculate_quality([2.2, 3.0, 1.8], radiation, 19.0)
+    new = calculate_quality(rain_windows(rain, now), radiation, 19.0)
     assert old['quality'] == 1
     assert new['quality'] == 2
 
@@ -120,18 +119,11 @@ def test_quality_ignores_missing_radiation_days():
     safe_temp = 20.0
     dry = [0, 0, 0]
     # Only one (sunny) day available: average over what we have, B = 200/170
-    assert calculate_quality(dry, [200, None, None], safe_temp, safe_temp)['quality'] == 3
+    assert calculate_quality(dry, [200, None, None], safe_temp)['quality'] == 3
     # Overcast penalty still applies to a single dark day
-    assert calculate_quality(dry, [100, None, None], safe_temp, safe_temp)['quality'] == 1
+    assert calculate_quality(dry, [100, None, None], safe_temp)['quality'] == 1
     # No radiation data at all: conservative, same as an overcast sky
-    assert calculate_quality(dry, [None, None, None], safe_temp, safe_temp)['quality'] == 1
-
-
-def test_48h_average_uses_the_newest_buckets():
-    # Chart is ordered oldest -> newest with 12h buckets: the last four are the last 48h.
-    week = [24.0] * 11 + [20.0] * 4
-    assert water_temp_48h_avg(week, 20.0) == 20.0  # the hot days a week ago must not count
-    assert water_temp_48h_avg([], 19.5) == 19.5
+    assert calculate_quality(dry, [None, None, None], safe_temp)['quality'] == 1
 
 
 def test_bucket_start_and_series():

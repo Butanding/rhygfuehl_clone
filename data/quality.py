@@ -14,7 +14,7 @@ RAIN_MAX_GAP = timedelta(hours=3)
 RAD_THRESHOLD = 170  # W/m², reference for a sunny day (24h mean)
 
 
-def calculate_quality(rain_week, global_radiation_week, water_temp_latest, water_temp_48h_avg):
+def calculate_quality(rain_week, global_radiation_week, water_temp_latest):
     """Compute the swim recommendation.
 
     rain_week: [R0, R1, R2] = rain of the last 24h, 24-48h ago, 48-72h ago (mm)
@@ -44,8 +44,6 @@ def calculate_quality(rain_week, global_radiation_week, water_temp_latest, water
 
     # Hard Scientific Caps (Safety First)
     if rad_bonus < 0.6: # Overcast Penalty
-        quality_index = min(quality_index, 1)
-    if water_temp_48h_avg > 22.0: # Thermal Risk
         quality_index = min(quality_index, 1)
     if rain_impact >= 5.0: # Extreme Rain Impact
         quality_index = min(quality_index, 1)
@@ -175,10 +173,3 @@ def daily_radiation_series(by_date, today, days):
     dates = [(today - timedelta(days=i)).isoformat() for i in range(days, 0, -1)]
     return [by_date.get(d) for d in dates], dates
 
-
-# --- Temperature ------------------------------------------------------------
-
-def water_temp_48h_avg(week_chart, latest):
-    """Mean of the newest four 12h buckets (= last 48h). The chart is ordered oldest -> newest."""
-    recent = week_chart[-4:]
-    return sum(recent) / len(recent) if recent else latest
