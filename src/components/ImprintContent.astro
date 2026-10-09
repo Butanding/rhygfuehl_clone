@@ -1,5 +1,6 @@
 ---
 import Icon from './Icon.astro';
+import { withBase } from '../utils/base';
 
 interface Props {
 	t: any;
@@ -8,7 +9,7 @@ interface Props {
 
 const { t, lang } = Astro.props;
 
-const backLink = lang === 'de' ? '/' : '/en/';
+const backLink = withBase(lang === 'de' ? '/' : '/en/');
 ---
 
 <div class="max-w-none">

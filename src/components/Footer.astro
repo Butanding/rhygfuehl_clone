@@ -1,6 +1,7 @@
 ---
 import Icon from './Icon.astro';
 import metadata from '../../data/data/metadata.json';
+import { withBase } from '../utils/base';
 
 interface Props {
 	t: any;
@@ -8,7 +9,7 @@ interface Props {
 }
 
 const { t, lang } = Astro.props;
-const imprintLink = lang === 'de' ? '/impressum' : '/en/imprint';
+const imprintLink = withBase(lang === 'de' ? '/impressum' : '/en/imprint');
 ---
 
 <footer class="max-w-screen-md mx-auto px-5 pb-8 pt-4">

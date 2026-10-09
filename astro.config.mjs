@@ -4,6 +4,9 @@ import AstroPWA from '@vite-pwa/astro';
 import icon from 'astro-icon';
 
 export default defineConfig({
+  // Overridable for deployments under a sub-path (e.g. GitHub Pages).
+  site: process.env.SITE_URL || undefined,
+  base: process.env.BASE_PATH || undefined,
   integrations: [
     icon(),
     AstroPWA({
@@ -17,17 +20,17 @@ export default defineConfig({
         display: 'standalone',
         icons: [
           {
-            src: '/pwa-192x192.png',
+            src: 'pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: '/pwa-512x512.png',
+            src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
           },
           {
-            src: '/maskable-icon-512x512.png',
+            src: 'maskable-icon-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',

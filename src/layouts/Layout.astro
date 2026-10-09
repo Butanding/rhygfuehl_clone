@@ -4,6 +4,7 @@ import Footer from '../components/Footer.astro';
 import Icon from '../components/Icon.astro';
 import de from '../locales/de.json';
 import en from '../locales/en.json';
+import { withBase, isClone } from '../utils/base';
 import '../assets/index.css';
 
 interface Props {
@@ -58,11 +59,12 @@ const datasetSchema = {
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
 		<meta name="generator" content={Astro.generator} />
 		
 		<title>{title}</title>
 		<meta name="description" content={description} />
+		{isClone && <meta name="robots" content="noindex, nofollow" />}
 		<link rel="canonical" href={canonicalURL} />
 
 		<!-- Structured Data -->
@@ -89,29 +91,29 @@ const datasetSchema = {
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<meta name="apple-mobile-web-app-title" content="rhygfuehl" />
-		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="apple-touch-icon" href={withBase('/apple-touch-icon.png')} />
 		{pwaInfo && <link rel="manifest" href={pwaInfo.webManifest.href} />}
 
 		<!-- Umami Cloud Tracking -->
-		<script defer src="https://cloud.umami.is/script.js" data-website-id="209370c3-c631-4cef-80f2-6fe9a59e45e4"></script>
+		{!isClone && <script defer src="https://cloud.umami.is/script.js" data-website-id="209370c3-c631-4cef-80f2-6fe9a59e45e4"></script>}
 
 
 	</head>
 	<body class="min-h-screen bg-white dark:bg-darkblue text-darkblue dark:text-white transition-colors duration-300 antialiased">
 		<header class="max-w-screen-md mx-auto px-5 pt-8 flex items-center justify-between">
 			<h1 class="text-2xl font-bold">
-				<a href={lang === 'de' ? '/' : '/en/'}>rhygfuehl</a>
+				<a href={withBase(lang === 'de' ? '/' : '/en/')}>rhygfuehl</a>
 			</h1>
 			<nav>
 				<div class="flex bg-darkblue/5 dark:bg-white/5 p-1 rounded-full border border-darkblue/10 dark:border-white/10">
 					<a 
-						href="/" 
+						href={withBase('/')}
 						class={`px-4 py-1.5 text-xs font-bold rounded-full transition-all duration-300 ${lang === 'de' ? 'bg-white dark:bg-darkblue text-darkblue dark:text-white shadow-sm' : 'opacity-40 hover:opacity-100'}`}
 					>
 						DE
 					</a>
 					<a 
-						href="/en/" 
+						href={withBase('/en/')}
 						class={`px-4 py-1.5 text-xs font-bold rounded-full transition-all duration-300 ${lang === 'en' ? 'bg-white dark:bg-darkblue text-darkblue dark:text-white shadow-sm' : 'opacity-40 hover:opacity-100'}`}
 					>
 						EN
