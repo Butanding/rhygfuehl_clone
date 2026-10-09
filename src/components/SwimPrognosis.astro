@@ -99,7 +99,7 @@ const rainData = data.find(d => d.measure === 'rain');
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					{rainData && (
 						<div class="space-y-2">
-							<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">Niederschlag (mm)</h3>
+							<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">{t.rainChartTitle}</h3>
 							<LineChart 
 								id="rain-chart"
 								dataWeek={rainData.chart.week}
@@ -114,20 +114,22 @@ const rainData = data.find(d => d.measure === 'rain');
 					)}
 					{radiationData && (
 						<div class="space-y-2">
-							<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">Strahlung (W/m²)</h3>
+							<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">{t.radiationChartTitle}</h3>
 							<LineChart 
 								id="radiation-chart"
 								dataWeek={radiationData.chart.week}
 								dataMonth={radiationData.chart.month}
 								textWeek={t.week}
 								textMonth={t.month}
-								textToday={t.today}
+								textToday={t.yesterday}
 								lastUpdate=""
 								updateLabel=""
 							/>
 						</div>
 					)}
 				</div>
+
+				<p class="text-xs opacity-60 leading-relaxed">{t.prognosisChartNote}</p>
 
 				<div class={`p-4 rounded-xl text-xs leading-normal border ${status.bg} border-current/10 opacity-90`}>
 					<div class="font-bold mb-1 uppercase tracking-tight flex items-center">

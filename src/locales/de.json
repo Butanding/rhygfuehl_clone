@@ -47,6 +47,10 @@
     "prognosisDisclaimer": "Automatisierte Schätzung basierend auf Wetterdaten. Keine offiziellen Labormessungen. Baden auf eigene Gefahr.",
     "prognosisDescription": "Diese Empfehlung basiert auf Niederschlag, Globalstrahlung sowie der Wassertemperatur (Sicherheit & Hygiene) der letzten 72 Stunden.",
     "prognosisDetails": "Details zur Berechnung auf Codeberg",
+    "yesterday": "Gestern",
+    "rainChartTitle": "Niederschlag pro Tag (mm)",
+    "radiationChartTitle": "Strahlung Tagesmittel (W/m²)",
+    "prognosisChartNote": "Niederschlag: Summe der 24 Stunden bis Tagesende, heute die letzten 24 Stunden. Strahlung: Mittel über 24 Stunden inklusive Nacht (rund 300 W/m² und mehr entsprechen einem klaren Sommertag), erst am Folgetag verfügbar.",
     "seo": {
         "title": "rhygfuehl - Aktuelle Rheintemperatur in Basel",
         "description": "☀️ Die Lufttemperatur am Rhein in Basel ist aktuell %airTemp% °C. Der Rhein hat eine Wassertemperatur von %waterTemp% °C. rhygfuehl.ch zeigt die aktuelle Rheintemperatur von Basel in einer übersichtlichen App."
