@@ -1,0 +1,48 @@
+# Mirrors the original repo (codeberg.org/chric/rhygfuehl) into the `upstream`
+# branch and merges it into `main`. If the merge conflicts with our own changes
+# the job fails; resolve it locally with `git merge upstream`.
+name: Sync from upstream
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  UPSTREAM_URL: https://codeberg.org/chric/rhygfuehl.git
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Update upstream branch
+        run: |
+          git fetch "$UPSTREAM_URL" main
+          git push origin FETCH_HEAD:refs/heads/upstream
+
+      - name: Merge upstream into main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          before=$(git rev-parse HEAD)
+          if ! git merge --no-edit FETCH_HEAD -m "Merge upstream (codeberg.org/chric/rhygfuehl)"; then
+            git merge --abort
+            echo "::error::Merge conflict with upstream. Resolve locally: git fetch origin && git merge origin/upstream"
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$before" ]; then
+            git push origin main
+            # Pushes made with GITHUB_TOKEN don't trigger workflows, so start the deploy explicitly.
+            gh workflow run deploy-pages.yml --ref main
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}

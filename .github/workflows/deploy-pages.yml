@@ -1,0 +1,71 @@
+# Builds the site and publishes it to GitHub Pages as a test clone of rhygfuehl.ch.
+# The latest measurement data is taken from the original Codeberg repo on every
+# run, so the clone shows the same data as the live site.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://codeberg.org/chric/rhygfuehl.git
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull latest data from upstream
+        continue-on-error: true
+        run: |
+          git fetch --depth=1 "$UPSTREAM_URL" main
+          git checkout FETCH_HEAD -- data/data
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          SITE_URL: ${{ steps.pages.outputs.origin }}
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}/
+          PUBLIC_IS_CLONE: 'true'
+
+      - name: Keep the clone out of search engines
+        run: |
+          printf 'User-agent: *\nDisallow: /\n' > dist/robots.txt
+          rm -f dist/sitemap.xml dist/_redirects
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
