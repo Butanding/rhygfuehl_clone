@@ -1,7 +1,7 @@
 # Builds the site and publishes it to GitHub Pages as a test clone of rhygfuehl.ch.
 # Prerequisite: Settings -> Pages -> Source = "GitHub Actions".
-# The latest measurement data is taken from the original Codeberg repo on every
-# run, so the clone shows the same data as the live site.
+# Measurement data is generated on every run by our own data/aggregation.py;
+# the original's data files are only used as a fallback.
 name: Deploy to GitHub Pages
 
 on:
@@ -29,9 +29,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Pull latest data from upstream
+      # Our own aggregation (data/aggregation.py) runs here, so the clone shows
+      # the effect of our changes to the calculation.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Generate data with our aggregation
+        id: aggregate
         continue-on-error: true
         run: |
+          pip install -r data/requirements.txt
+          python data/aggregation.py
+          echo "{\"timestamp\": \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\", \"version\": \"$(git rev-parse --short HEAD)-$(date -u +'%Y%m%d-%H%M')\"}" > data/data/metadata.json
+
+      # Fallback if our aggregation fails (e.g. API outage): use the data of the original.
+      - name: Fall back to data from upstream
+        if: steps.aggregate.outcome == 'failure'
+        run: |
+          echo "::warning::Own aggregation failed, using the data files of the original repo"
           git fetch --depth=1 "$UPSTREAM_URL" main
           git checkout FETCH_HEAD -- data/data
 

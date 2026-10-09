@@ -18,9 +18,12 @@ https://github.com/Butanding/rhygfuehl_clone/compare/upstream...main
 
 ## Automatisch
 
-- **Deploy to GitHub Pages:** bei jedem Push auf `main` und alle 30 Minuten. Holt vorher
-  die aktuellen Messdaten (`data/data/*.json`) vom Original, damit die Test-Seite dieselben
-  Daten wie rhygfuehl.ch zeigt.
+- **Deploy to GitHub Pages:** bei jedem Push auf `main` und alle 30 Minuten. Führt vorher
+  `data/aggregation.py` aus und holt die Messdaten damit direkt von data.bs.ch, die Test-Seite
+  zeigt also die Wirkung der eigenen Berechnung. Nur wenn das fehlschlägt, werden die
+  Datendateien des Originals als Notlösung verwendet (Warnung im Lauf).
+  Die committeten `data/data/*.json` werden daher nicht von Hand angefasst, sonst gibt es
+  Konflikte mit den Daten-Commits des Originals.
 - **Sync from upstream:** täglich. Aktualisiert `upstream` und merged es in `main`.
   Bei einem Merge-Konflikt schlägt der Job fehl (GitHub schickt eine Mail). Dann lokal:
   `git fetch origin && git checkout main && git merge origin/upstream`, Konflikte lösen, pushen.
