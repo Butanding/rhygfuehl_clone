@@ -9,6 +9,7 @@ from quality import (
     daily_radiation_series,
     daily_rain_series,
     fill_gaps,
+    latest_rain_timestamp,
     prepare_rain_records,
     radiation_by_date,
     radiation_window,
@@ -149,3 +150,8 @@ def test_bucket_start_and_series():
 
 def test_fill_gaps_reports_number_of_gaps():
     assert fill_gaps([None, 1.0, None, None, 2.0]) == ([0, 1.0, 1.0, 1.0, 2.0], 3)
+
+
+def test_last_update_is_the_newest_rain_reading():
+    assert latest_rain_timestamp(load_rain()) == '2026-10-09T14:09:35Z'
+    assert latest_rain_timestamp([]) is None

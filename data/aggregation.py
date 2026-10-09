@@ -9,6 +9,7 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     daily_radiation_series,
     daily_rain_series,
     fill_gaps,
+    latest_rain_timestamp,
     prepare_rain_records,
     radiation_by_date,
     radiation_window,
@@ -131,7 +132,6 @@ def fetch_quality(waterData, now=None):
     # Global radiation: daily mean, the city publishes it the day after.
     d = get_json(f'{API}/100254/records?select=date%2C%20gre000d0%20as%20globalRadiation&limit=40&pretty=false&timezone=UTC&order_by=date%20DESC')
     radiation = radiation_by_date([r['record']['fields'] for r in d['records']])
-    last_update = d['records'][0]['record']['timestamp']
 
     # Rain: hourly readings of the rolling 24h sum. 32 days cover the month chart.
     rows = get_json(
@@ -144,6 +144,8 @@ def fetch_quality(waterData, now=None):
         },
     )
     rain = prepare_rain_records(rows)
+    # The recommendation is as fresh as the latest rain reading (radiation only changes daily).
+    last_update = latest_rain_timestamp(rain) or now.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # Recommendation inputs
     rain_inputs = rain_windows(rain, now)  # [R0, R1, R2]

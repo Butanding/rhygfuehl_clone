@@ -118,6 +118,11 @@ def prepare_rain_records(rows):
     return rain
 
 
+def latest_rain_timestamp(rain):
+    """ISO timestamp (UTC) of the newest rain reading, or None without data."""
+    return rain[-1][0].astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ') if rain else None
+
+
 def rain_24h_at(rain, when):
     """Rolling 24h rain sum at `when`: latest reading not after it, or None if missing/too old."""
     for t, value in reversed(rain):
