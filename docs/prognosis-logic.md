@@ -3,27 +3,32 @@
 This document defines the automated estimation logic used to determine if swimming in the Rhine at Basel is currently advisable. The recommendation is calculated by assessing two independent indices: **Water Quality** (microbiological risk) and **Swimmer Safety** (physical risk).
 
 ## Input Parameters
-Data is fetched every 15 minutes from the [Basel-Stadt Open Data Portal](https://data.bs.ch/).
+Data is fetched every 15 minutes (radiation: one value per day) from the [Basel-Stadt Open Data Portal](https://data.bs.ch/).
 
 | Parameter | Station | Unit | Metric Used |
 | :--- | :--- | :--- | :--- |
-| **Precipitation** | Rheinpromenade 2 | mm/24h | Weighted 72h impact ($I$) |
-| **Global Radiation** | St. Johann | W/m² | 72h average radiation bonus ($B$) |
-| **Water Temperature** | Weil am Rhein | °C | Latest ($T_{now}$) & 48h Average ($T_{avg}$) |
+| **Precipitation** | St. Johann (`034001AF`) | mm (rolling 24h sum, hourly readings) | Weighted 72h impact ($I$) |
+| **Global Radiation** | MeteoSchweiz Basel-Binningen (dataset 100254, daily mean) | W/m² | Average of the last 3 complete days ($B$) |
+| **Water Temperature** | Weil am Rhein | °C | Latest ($T_{now}$) & 48h Average ($T_{avg}$, mean of the newest four 12h buckets) |
 
 ## Calculation Models
 
 ### A. Rain Impact Score ($I$)
 Rain triggers combined sewer overflows (CSO), increasing bacterial load. This impact decays over time:
-- $R_0$: Rain today (100% weight)
-- $R_1$: Rain yesterday (50% weight)
-- $R_2$: Rain 2 days ago (25% weight)
+- $R_0$: Rain of the last 24 hours (100% weight)
+- $R_1$: Rain of the 24 hours before that, i.e. 24-48h ago (50% weight)
+- $R_2$: Rain 48-72h ago (25% weight)
+
+The station reports a *rolling* 24h sum with every reading. $R_0$ is the latest reading, $R_1$ the reading 24h earlier and $R_2$ the reading 48h earlier. Each window therefore covers a different 24 hours, so no rain is counted twice. A reading is only used if it is at most 3 hours older than the requested time; otherwise the window counts as 0 mm and a warning is logged.
 
 **Formula:** $I = (R_0 \times 1.0) + (R_1 \times 0.5) + (R_2 \times 0.25)$
 
+> Do not use the *daily maximum* of the rolling sum as "rain of the day": right after midnight the window still contains the previous day, so a dry day after a rainy one would show the rain of the day before (and the weighted sum above would count it several times).
+
 ### B. Radiation Bonus ($B$)
 Global radiation acts as a natural disinfectant. High radiation speeds up the inactivation of fecal indicators (e.g., *E. coli*).
-- $Rad_{threshold}$: 170 W/m² (Reference for a sunny day)
+- $Rad_{threshold}$: 170 W/m² (Reference for a sunny day, 24h mean including the night)
+- $Rad_{0..2}$: daily mean of **yesterday, 2 days ago and 3 days ago**. The city publishes a day's mean only after the day is over, so today is never available. Values are matched by date. Missing days are left out of the average; without any data $B = 0$ (overcast penalty applies).
 
 **Formula:** $B = \frac{\text{Avg}(Rad_{0..2})}{Rad_{threshold}}$
 
