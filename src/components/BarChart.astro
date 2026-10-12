@@ -1,76 +1,129 @@
 ---
-interface Props {
-	id: string;
-	/** value per bar, oldest first */
-	data: number[];
-	/** ISO start time (UTC) of each bar, used for the weekday labels at midnight */
-	starts: string[];
-	/** BCP 47 locale for the weekday names */
-	dateLocale?: string;
-	textNow?: string;
+interface View {
+	values: number[];
+	/** ISO start time (UTC) of each bar (hourly view) */
+	starts?: string[];
+	/** local calendar date YYYY-MM-DD of each bar (daily views) */
+	dates?: string[];
 }
 
-const { id, data, starts, dateLocale = 'de-CH', textNow = 'Now' } = Astro.props;
+interface Props {
+	id: string;
+	/** colour of the bars, see utils/chartTheme.ts */
+	kind: 'rain' | 'radiation';
+	/** accessible name of the chart */
+	label: string;
+	/** hourly bars of the last three days */
+	hours: View;
+	/** daily bars; the button is left out if missing */
+	week?: View;
+	month?: View;
+	/** BCP 47 locale for the weekday names */
+	dateLocale?: string;
+	textHours: string;
+	textWeek: string;
+	textMonth: string;
+	/** label at the right end of the axis, per view */
+	textEnd: { hours: string; week: string; month: string };
+	/** y axis keeps at least this range, so small values stay visually small */
+	suggestedMax: { hours: number; days: number };
+}
+
+const { id, kind, label, hours, week, month, dateLocale = 'de-CH', textHours, textWeek, textMonth, textEnd, suggestedMax } = Astro.props;
+
+const modes = [
+	{ key: 'hours', text: textHours, view: hours },
+	{ key: 'week', text: textWeek, view: week },
+	{ key: 'month', text: textMonth, view: month }
+].filter(m => m.view && m.view.values.length > 0);
+
+const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggestedMax };
 ---
 
 <div
 	class="bar-chart-container chart-container relative w-full my-4 pb-8"
 	data-id={id}
-	data-values={JSON.stringify(data)}
-	data-starts={JSON.stringify(starts)}
-	data-locale={dateLocale}
+	data-config={JSON.stringify(config)}
 >
-	<div class="relative h-[180px] w-full chart-wrapper">
-		<canvas id={`canvas-${id}`}></canvas>
+	{modes.length > 1 && (
+		<div class="flex gap-2 mb-4">
+			{modes.map((m, i) => (
+				<button
+					type="button"
+					class={`bar-time-toggle px-3 py-1 text-xs rounded-full hover:opacity-80 transition-all font-bold z-10 ${i === 0 ? 'bg-darkblue/10 dark:bg-white/10' : 'bg-darkblue/5 dark:bg-white/5 opacity-50 hover:opacity-100'}`}
+					data-mode={m.key}
+				>
+					{m.text}
+				</button>
+			))}
+		</div>
+	)}
 
-		<div class="absolute bottom-[-25px] right-0 px-2 text-[10px] font-bold opacity-40 pointer-events-none">
-			{textNow}
+	<div class="relative h-[180px] w-full chart-wrapper">
+		<canvas id={`canvas-${id}`} role="img" aria-label={label}></canvas>
+
+		<div class="end-label absolute bottom-[-25px] right-0 px-2 text-[10px] font-bold opacity-40 pointer-events-none">
+			{textEnd.hours}
 		</div>
 	</div>
 </div>
 
 <script>
 	import Chart from 'chart.js/auto';
+	import { getChartColors, onThemeChange } from '../utils/chartTheme';
 
+	type Mode = 'hours' | 'week' | 'month';
 	const instances = new Map<string, any>();
-
-	const getThemeColors = () => {
-		const isDark = document.documentElement.classList.contains('dark');
-		return {
-			bar: isDark ? '#FFFFFF' : '#002855',
-			grid: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 40, 85, 0.15)'
-		};
-	};
 
 	const setupCharts = () => {
 		document.querySelectorAll('.bar-chart-container').forEach(container => {
 			const id = container.getAttribute('data-id');
 			if (!id || instances.has(id)) return;
 
-			const values: number[] = JSON.parse(container.getAttribute('data-values') || '[]');
-			const starts: string[] = JSON.parse(container.getAttribute('data-starts') || '[]');
-			const locale = container.getAttribute('data-locale') || 'de-CH';
+			const config = JSON.parse(container.getAttribute('data-config') || '{}');
 			const canvas = container.querySelector('canvas') as HTMLCanvasElement;
-			if (!canvas) return;
+			if (!config.hours || !canvas) return;
 
 			// Day boundaries and weekday names always in Basel time, whatever the device's time zone is.
 			const hourOfDay = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Zurich' });
-			const weekday = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'Europe/Zurich' });
-			const isMidnight = starts.map(s => Number(hourOfDay.format(new Date(s))) === 0);
-			const labels = starts.map((s, i) => (isMidnight[i] ? weekday.format(new Date(s)) : ''));
+			const weekdayLocal = new Intl.DateTimeFormat(config.locale, { weekday: 'short', timeZone: 'Europe/Zurich' });
+			const weekdayOfDate = new Intl.DateTimeFormat(config.locale, { weekday: 'short', timeZone: 'UTC' });
+			const asDate = (d: string) => new Date(`${d}T12:00:00Z`);
 
-			const colors = getThemeColors();
+			// Labels and day lines of a view. "Marks" are the bars that start a new day (or week).
+			const describe = (mode: Mode) => {
+				const view = config[mode];
+				if (mode === 'hours') {
+					const marks = view.starts.map((s: string) => Number(hourOfDay.format(new Date(s))) === 0);
+					const labels = view.starts.map((s: string, i: number) => (marks[i] ? weekdayLocal.format(new Date(s)) : ''));
+					return { values: view.values, labels, marks, max: config.suggestedMax.hours, bar: 0.8 };
+				}
+				if (mode === 'week') {
+					const labels = view.dates.map((d: string) => weekdayOfDate.format(asDate(d)));
+					return { values: view.values, labels, marks: labels.map(() => false), max: config.suggestedMax.days, bar: 0.7 };
+				}
+				// month: a label and a line at every Monday
+				const marks = view.dates.map((d: string) => asDate(d).getUTCDay() === 1);
+				const labels = view.dates.map((d: string, i: number) => {
+					const date = asDate(d);
+					return marks[i] ? `${date.getUTCDate()}.${date.getUTCMonth() + 1}.` : '';
+				});
+				return { values: view.values, labels, marks, max: config.suggestedMax.days, bar: 0.7 };
+			};
+
+			let state = describe('hours');
+			let colors = getChartColors();
 			const tickFont = { size: 10, weight: 'bold' as const };
 
 			const chart = new Chart(canvas, {
 				type: 'bar',
 				data: {
-					labels,
+					labels: state.labels,
 					datasets: [{
-						data: values,
-						backgroundColor: colors.bar,
+						data: state.values,
+						backgroundColor: colors[config.kind as 'rain' | 'radiation'],
 						borderRadius: 2,
-						barPercentage: 0.8,
+						barPercentage: state.bar,
 						categoryPercentage: 1
 					}]
 				},
@@ -86,32 +139,51 @@ const { id, data, starts, dateLocale = 'de-CH', textNow = 'Now' } = Astro.props;
 						x: {
 							border: { display: false },
 							ticks: {
-								color: colors.bar,
+								color: colors.text,
 								font: tickFont,
 								autoSkip: false,
 								maxRotation: 0,
 								align: 'start',
-								callback: (_: any, i: number) => labels[i]
+								callback: (_: any, i: number) => state.labels[i]
 							},
 							grid: {
 								drawTicks: false,
-								// a line at the start of every day
-								color: (ctx: any) => (isMidnight[ctx.index] ? getThemeColors().grid : 'transparent')
+								color: (ctx: any) => (state.marks[ctx.index] ? colors.grid : 'transparent')
 							}
 						},
 						y: {
 							beginAtZero: true,
-							// keep a few tenths of a millimetre of drizzle visually small
-							suggestedMax: 2,
+							suggestedMax: state.max,
 							border: { display: false },
-							ticks: { color: colors.bar, font: tickFont, maxTicksLimit: 5 },
+							ticks: { color: colors.text, font: tickFont, maxTicksLimit: 5 },
 							grid: { color: colors.grid }
 						}
 					}
 				}
 			});
 
-			instances.set(id, chart);
+			instances.set(id, { chart, container, config });
+
+			// View toggles: 3 days (hourly bars), week and month (daily bars)
+			container.querySelectorAll('.bar-time-toggle').forEach(btn => {
+				btn.addEventListener('click', e => {
+					e.preventDefault();
+					e.stopPropagation();
+					const mode = btn.getAttribute('data-mode') as Mode;
+					state = describe(mode);
+
+					container.querySelectorAll('.bar-time-toggle').forEach(b => b.classList.add('opacity-50'));
+					btn.classList.remove('opacity-50');
+					const endLabel = container.querySelector('.end-label');
+					if (endLabel) endLabel.textContent = config.textEnd[mode];
+
+					chart.data.labels = state.labels;
+					chart.data.datasets[0].data = state.values;
+					(chart.data.datasets[0] as any).barPercentage = state.bar;
+					(chart.options.scales as any).y.suggestedMax = state.max;
+					chart.update();
+				});
+			});
 
 			// Resize handling for the initially collapsed (hidden) state
 			const wrapper = container.querySelector('.chart-wrapper');
@@ -121,6 +193,16 @@ const { id, data, starts, dateLocale = 'de-CH', textNow = 'Now' } = Astro.props;
 				});
 				ro.observe(wrapper);
 			}
+
+			// Light/dark switch of the browser
+			onThemeChange(() => {
+				colors = getChartColors();
+				chart.data.datasets[0].backgroundColor = colors[config.kind as 'rain' | 'radiation'];
+				(chart.options.scales as any).x.ticks.color = colors.text;
+				(chart.options.scales as any).y.ticks.color = colors.text;
+				(chart.options.scales as any).y.grid.color = colors.grid;
+				chart.update('none');
+			});
 		});
 	};
 
@@ -130,15 +212,4 @@ const { id, data, starts, dateLocale = 'de-CH', textNow = 'Now' } = Astro.props;
 		window.addEventListener('load', setupCharts);
 	}
 	document.addEventListener('astro:after-swap', setupCharts);
-
-	new MutationObserver(() => {
-		const colors = getThemeColors();
-		instances.forEach(chart => {
-			chart.data.datasets[0].backgroundColor = colors.bar;
-			chart.options.scales.x.ticks.color = colors.bar;
-			chart.options.scales.y.ticks.color = colors.bar;
-			chart.options.scales.y.grid.color = colors.grid;
-			chart.update('none');
-		});
-	}).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 </script>

@@ -66,6 +66,7 @@ const {
 
 <script>
 	import Chart from 'chart.js/auto';
+	import { getChartColors, onThemeChange } from '../utils/chartTheme';
 
 	// Global instances map
 	if (!(window as any).chartInstances) {
@@ -74,11 +75,8 @@ const {
 	const instances = (window as any).chartInstances;
 
 	const getThemeColors = () => {
-		const isDark = document.documentElement.classList.contains('dark');
-		return {
-			line: isDark ? '#FFFFFF' : '#002855',
-			grid: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 40, 85, 0.15)'
-		};
+		const { line, grid } = getChartColors();
+		return { line, grid };
 	};
 
 	const setupCharts = () => {
@@ -197,7 +195,7 @@ const {
 	// Single global theme observer
 	if (!(window as any).themeObserverSet) {
 		(window as any).themeObserverSet = true;
-		const observer = new MutationObserver(() => {
+		onThemeChange(() => {
 			const colors = getThemeColors();
 			instances.forEach((chart: any) => {
 				if (chart) {
@@ -209,6 +207,5 @@ const {
 				}
 			});
 		});
-		observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 	}
 </script>

@@ -3,25 +3,29 @@
 This document defines the automated estimation logic used to determine if swimming in the Rhine at Basel is currently advisable. The recommendation is calculated by assessing two independent indices: **Water Quality** (microbiological risk) and **Swimmer Safety** (physical risk).
 
 ## Input Parameters
-Data is fetched every 15 minutes (radiation: one value per day) from the [Basel-Stadt Open Data Portal](https://data.bs.ch/); the precipitation comes from the open data of [MeteoSwiss](https://opendatadocs.meteoswiss.ch/).
+Data is fetched every 15 minutes from the [Basel-Stadt Open Data Portal](https://data.bs.ch/); precipitation and global radiation come from the open data of [MeteoSwiss](https://opendatadocs.meteoswiss.ch/) (hourly values).
 
 | Parameter | Station | Unit | Metric Used |
 | :--- | :--- | :--- | :--- |
-| **Precipitation** | MeteoSwiss Basel-Binningen (`BAS`, parameter `rre150h0`) | mm per hour | Weighted 72h impact ($I$) |
-| **Global Radiation** | MeteoSchweiz Basel-Binningen (dataset 100254, daily mean) | W/m² | Average of the last 3 complete days ($B$) |
+| **Precipitation** | MeteoSwiss Basel-Binningen (`BAS`, parameter `rre150h0`) | mm, hourly total | Age-weighted 72h impact ($I$) and the 24h sums $R_0..R_2$ |
+| **Global Radiation** | MeteoSwiss Basel-Binningen (`BAS`, parameter `gre000h0`) | W/m², hourly mean | Mean of the last 72 hours ($B$) |
 | **Water Temperature** | Weil am Rhein | °C | Latest ($T_{now}$), only used for the Swimmer Safety Index |
 
 ## Calculation Models
 
 ### A. Rain Impact Score ($I$)
-Rain triggers combined sewer overflows (CSO), increasing bacterial load. This impact decays over time:
-- $R_0$: Rain of the last 24 hours (100% weight)
-- $R_1$: Rain of the 24 hours before that, i.e. 24-48h ago (50% weight)
-- $R_2$: Rain 48-72h ago (25% weight)
+Rain triggers combined sewer overflows (CSO), increasing bacterial load. This impact decays over time, with a weight of roughly 100% for the last 24 hours, 50% for the 24 hours before and 25% for those before:
+- $R_0$: Rain of the last 24 hours
+- $R_1$: Rain of the 24 hours before that, i.e. 24-48h ago
+- $R_2$: Rain 48-72h ago
 
-The hourly totals are summed over three consecutive 24-hour windows ending at the newest available hour: $R_0$ is the last 24 hours, $R_1$ the 24 hours before that, $R_2$ the 24 hours before that. Each rain hour falls into exactly one window, so no rain is counted twice. Hours without a value count as 0 mm and a warning is logged. The same hourly values are shown as bars in the rain chart (last 72 hours).
+The hourly totals are summed over three consecutive 24-hour windows ending at the newest available hour: $R_0$ is the last 24 hours, $R_1$ the 24 hours before that, $R_2$ the 24 hours before that. Each rain hour falls into exactly one window, so no rain is counted twice. Hours without a value count as 0 mm and a warning is logged. The same hourly values are shown as bars in the rain chart.
 
-**Formula:** $I = (R_0 \times 1.0) + (R_1 \times 0.5) + (R_2 \times 0.25)$
+**Smooth decay:** The windows only name the periods and are used for the conditions on $R_0$. The impact $I$ itself weights every single hour by its age, so the rating does not jump when rain passes the 24h or 48h mark:
+
+$I = \sum_{h} \text{rain}_h \times w(a_h)$, with $w(a) = 2^{-(a - 11.5\,\text{h}) / 24\,\text{h}}$
+
+where $a_h$ is the age of the middle of the hour in hours. The weight halves every 24 hours and fades linearly to 0 over the last 12 hours of the 72h window. The constant 11.5 h is chosen so that steady rain counts like the former block weights: an average weight of 1.0 for 0-24h, 0.5 for 24-48h and about 0.2 for 48-72h (before: 1 / 0.5 / 0.25), so the thresholds of the decision matrix stay valid. The largest change of the weight from one hour to the next is 0.04 (before: 0.5 at once).
 
 **Time stamps:** MeteoSwiss labels a value with the *end* of its hour (UTC): the row `08:00` is the rain between 07:00 and 08:00.
 
@@ -32,9 +36,9 @@ The hourly totals are summed over three consecutive 24-hour windows ending at th
 ### B. Radiation Bonus ($B$)
 Global radiation acts as a natural disinfectant. High radiation speeds up the inactivation of fecal indicators (e.g., *E. coli*).
 - $Rad_{threshold}$: 170 W/m² (Reference for a sunny day, 24h mean including the night)
-- $Rad_{0..2}$: daily mean of **yesterday, 2 days ago and 3 days ago**. The city publishes a day's mean only after the day is over, so today is never available. Values are matched by date. Missing days are left out of the average; without any data $B = 0$ (overcast penalty applies).
+- $Rad_h$: hourly mean radiation of the **same 72 hours as the rain**, night included, so $B$ is the mean over three whole days. There is no delay: the values are as fresh as the rain. Hours without a value are left out of the mean; without any data $B = 0$ (overcast penalty applies).
 
-**Formula:** $B = \frac{\text{Avg}(Rad_{0..2})}{Rad_{threshold}}$
+**Formula:** $B = \frac{\text{Avg}(Rad_h)}{Rad_{threshold}}$
 
 ---
 

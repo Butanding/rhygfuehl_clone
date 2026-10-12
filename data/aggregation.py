@@ -5,15 +5,18 @@ from datetime import datetime, timedelta, timezone
 
 from quality import (  # noqa: F401  (calculate_quality is re-exported for the tests)
     LOCAL_TZ,
+    RADIATION_COLUMN,
+    RAIN_COLUMN,
+    WINDOW_HOURS,
     calculate_quality,
     daily_radiation_series,
     daily_rain_series,
     fill_gaps,
-    hourly_rain_series,
+    hourly_series,
     newest_hour,
-    parse_hourly_rain,
-    radiation_by_date,
-    radiation_window,
+    parse_hourly,
+    radiation_mean,
+    rain_impact,
     rain_windows,
     series_from_records,
 )
@@ -23,10 +26,9 @@ API = 'https://data.bs.ch/api/v2/catalog/datasets'
 
 AIR_STATION_ID = '034003A7'  # Rheinpromenade 2
 
-# MeteoSwiss open data, station Basel-Binningen (BAS): hourly precipitation.
+# MeteoSwiss open data, station Basel-Binningen (BAS): hourly precipitation and global radiation.
 # "recent" = 1 Jan of this year until yesterday, "now" = today.
 METEOSWISS = 'https://data.geo.admin.ch/ch.meteoschweiz.ogd-smn/bas/ogd-smn_bas_h_'
-RAIN_HOURS = 72  # bars of the rain chart = the three days that matter for the water quality
 RAIN_STALE_AFTER = timedelta(hours=3)
 
 
@@ -53,17 +55,22 @@ def get_text(url):
         raise SystemExit(e)
 
 
-def fetch_hourly_rain(now):
-    """Hourly rain of Basel-Binningen for the last ~32 days: {end of hour (UTC): mm}."""
+def fetch_hourly(now):
+    """Hourly rain and radiation of Basel-Binningen for the last ~32 days.
+
+    Returns two dicts {end of hour (UTC): value}.
+    """
     kinds = ['recent', 'now']
     if (now - timedelta(days=33)).year < now.year:
         # early January: the window reaches into the previous year
         decade = now.year // 10 * 10
         kinds.insert(0, f'historical_{decade}-{decade + 9}')
-    rain = {}
+    rain, radiation = {}, {}
     for kind in kinds:
-        rain.update(parse_hourly_rain(get_text(f'{METEOSWISS}{kind}.csv')))
-    return rain
+        text = get_text(f'{METEOSWISS}{kind}.csv')
+        rain.update(parse_hourly(text, RAIN_COLUMN))
+        radiation.update(parse_hourly(text, RADIATION_COLUMN))
+    return rain, radiation
 
 
 def add_chart(target, name, url, field):
@@ -154,34 +161,31 @@ def fetch_level():
 
 def fetch_quality(waterData, now=None):
     now = now or datetime.now(timezone.utc)
-    today = now.astimezone(LOCAL_TZ).date()
 
-    # Global radiation: daily mean, the city publishes it the day after.
-    d = get_json(f'{API}/100254/records?select=date%2C%20gre000d0%20as%20globalRadiation&limit=40&pretty=false&timezone=UTC&order_by=date%20DESC')
-    radiation = radiation_by_date([r['record']['fields'] for r in d['records']])
-
-    # Rain: hourly totals of Basel-Binningen, labelled with the END of the hour
-    rain = fetch_hourly_rain(now)
+    # Rain and global radiation: hourly values of Basel-Binningen, labelled with the END of the hour
+    rain, radiation = fetch_hourly(now)
     end = newest_hour(rain)
     if end is None:
         raise SystemExit('no rain data available')
     if now - end > RAIN_STALE_AFTER:
         print(f'warning: newest rain value is from {end:%Y-%m-%d %H:%M} UTC, the feed seems to be late')
-    # The recommendation is as fresh as the newest rain hour (radiation only changes daily).
+    # The recommendation is as fresh as the newest hour.
     last_update = end.strftime('%Y-%m-%dT%H:%M:%SZ')
 
-    # Recommendation inputs
+    # Recommendation inputs: the same 72 hours for rain and radiation
     rain_inputs, rain_missing = rain_windows(rain, end)  # [R0, R1, R2]
-    rad_inputs = radiation_window(radiation, today)  # [yesterday, 2 days ago, 3 days ago]
+    impact = rain_impact(rain, end)
+    rad_hours, _ = hourly_series(radiation, end, WINDOW_HOURS)
+    rad_mean, rad_missing = radiation_mean(radiation, end)
     if any(rain_missing):
         print(f'rain: missing hours per 24h window {rain_missing}, counting as 0 mm')
-    if None in rad_inputs:
-        print(f'radiation data missing for {rad_inputs.count(None)} of 3 days, ignoring them')
+    if rad_missing:
+        print(f'radiation: {rad_missing} of {WINDOW_HOURS} hours missing, ignoring them')
 
     waterTempLatest = waterData.get('actualValue', 0)
-    prognosis = calculate_quality(rain_inputs, rad_inputs, waterTempLatest)
+    prognosis = calculate_quality(rain_inputs, rad_hours, waterTempLatest, rain_impact=impact)
 
-    # Charts, oldest -> newest, with the date of every value
+    windows = {'last24h': rain_inputs[0], 'from24to48h': rain_inputs[1], 'from48to72h': rain_inputs[2]}
     qualityData = {
         'quality': prognosis['level'],
         'lastUpdate': last_update,
@@ -192,37 +196,44 @@ def fetch_quality(waterData, now=None):
         # What the recommendation was calculated from, for transparency and debugging
         'inputs': {
             'asOf': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
-            'rainMm': {'last24h': rain_inputs[0], 'from24to48h': rain_inputs[1], 'from48to72h': rain_inputs[2]},
-            'radiationWm2': {'yesterday': rad_inputs[0], 'twoDaysAgo': rad_inputs[1], 'threeDaysAgo': rad_inputs[2]},
+            'rainMm': windows,
+            'rainImpactMm': impact,
+            'radiationMeanWm2': None if rad_mean is None else round(rad_mean),
+            'radiationHoursMissing': rad_missing,
         },
         'data': [],
     }
 
-    radiation_data = {'measure': 'globalRadiation', 'chart': {}}
-    rain_data = {
-        'measure': 'rain',
-        'source': 'MeteoSwiss, station Basel-Binningen',
-        'windowsMm': {'last24h': rain_inputs[0], 'from24to48h': rain_inputs[1], 'from48to72h': rain_inputs[2]},
+    source = 'MeteoSwiss, station Basel-Binningen'
+    radiation_data = {
+        'measure': 'globalRadiation',
+        'source': source,
+        'meanLast72hWm2': None if rad_mean is None else round(rad_mean),
         'chart': {},
     }
-    for name, days in (('week', 7), ('month', 30)):
-        values, dates = daily_radiation_series(radiation, today, days)
-        radiation_data['chart'][name], gaps = fill_gaps(values)
-        radiation_data['chart'][name + 'Dates'] = dates
-        if gaps:
-            print(f'radiation {name}: {gaps} day(s) without data, filled with previous value')
+    rain_data = {'measure': 'rain', 'source': source, 'windowsMm': windows, 'chart': {}}
 
-        # Rain per Swiss calendar day (today = so far); the UI shows the hourly bars instead
+    # Charts, oldest -> newest, with the date of every value.
+    # Hourly bars of the last 72 hours; 'hourlyStarts' = start of each hour (UTC)
+    for data, hourly in ((rain_data, rain), (radiation_data, radiation)):
+        values, starts = hourly_series(hourly, end, WINDOW_HOURS)
+        data['chart']['hourly'] = [0 if v is None else v for v in values]
+        data['chart']['hourlyStarts'] = starts
+
+    # Daily values for week and month. Rain per Swiss day (today = so far); radiation as
+    # mean over complete days (today is left out, a partial day is not comparable).
+    for name, days in (('week', 7), ('month', 30)):
         values, dates = daily_rain_series(rain, end, days)
         rain_data['chart'][name], gaps = fill_gaps(values)
         rain_data['chart'][name + 'Dates'] = dates
         if gaps:
             print(f'rain {name}: {gaps} day(s) without data, filled with previous value')
 
-    # Hourly bars of the last 72 hours, oldest first; 'hourlyStarts' = start of each hour (UTC)
-    hourly, starts = hourly_rain_series(rain, end, RAIN_HOURS)
-    rain_data['chart']['hourly'] = [0 if v is None else v for v in hourly]
-    rain_data['chart']['hourlyStarts'] = starts
+        values, dates = daily_radiation_series(radiation, end, days)
+        radiation_data['chart'][name], gaps = fill_gaps(values)
+        radiation_data['chart'][name + 'Dates'] = dates
+        if gaps:
+            print(f'radiation {name}: {gaps} day(s) without data, filled with previous value')
 
     qualityData['data'] = [radiation_data, rain_data]
     updateJsonFile('qualityData.json', qualityData)
