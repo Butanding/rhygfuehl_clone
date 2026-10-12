@@ -248,12 +248,12 @@ $$\text{level} = \min(\text{Water Quality}, \text{Swimmer Safety})$$
 
 ## 6. What the website shows
 
-**Experiment mode.** The recommendation is a BETA feature. The tile is **hidden by default** and only shown when the *experiment mode* is on. The switch sits at the top right, left of the language switch (`Off | Experiment`). The choice is kept in the browser (`localStorage`, key `experiment`) and applies to both languages. A link can set it, too: `?experiment=on` or `?experiment=off`. The state is set on the `<html>` element (`data-experiment`) before the first paint, so the tile does not flash. The data is calculated and loaded in any case; only the display is switched. The structured data (FAQ), `llms.txt` and the WebMCP interface still mention the recommendation.
+**Experiment mode.** The recommendation is a BETA feature. The tile is **hidden by default** and only shown when the *experiment mode* is on. The switch sits at the top right, left of the language switch (`Off | Beta`). The choice is kept in the browser (`localStorage`, key `experiment`) and applies to both languages. A link can set it, too: `?experiment=on` or `?experiment=off`. The state is set on the `<html>` element (`data-experiment`) before the first paint, so the tile does not flash. The data is calculated and loaded in any case; only the display is switched. The structured data (FAQ), `llms.txt` and the WebMCP interface still mention the recommendation.
 
 The tile "Swimming Recommendation" (`SwimPrognosis.astro`, the last tile of the page) shows:
 
 - the overall level, the two indices, a short description and a disclaimer;
-- a **rain chart** and a **radiation chart** (`BarChart.astro`). The radiation chart has a switch **Radiation | Sunshine** (hourly: minutes of sun per hour; week and month: share of the possible duration per day in %). Both charts have three views:
+- a **rain chart** and a **radiation chart** (`BarChart.astro`). The radiation chart has a switch **Radiation | Sunshine** below the chart (hourly: minutes of sun per hour; week and month: share of the possible duration per day in %). Both charts have three views:
   - **3 days**: 72 hourly bars. Weekday names and a line at every midnight (Basel time); "Now" at the right end;
   - **Week**: 7 daily bars with weekday names;
   - **Month**: 30 daily bars, labelled on Mondays;

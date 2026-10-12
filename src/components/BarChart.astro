@@ -54,25 +54,11 @@ const pill = 'px-3 py-1 text-xs rounded-full hover:opacity-80 transition-all fon
 ---
 
 <div
-	class="bar-chart-container chart-container relative w-full my-4 pb-8"
+	class={`bar-chart-container chart-container relative w-full my-4 ${metrics.length > 1 ? 'pb-1' : 'pb-8'}`}
 	data-id={id}
 	data-config={JSON.stringify(config)}
 >
 	<h3 class="bar-title text-xs uppercase tracking-wider opacity-50 font-bold mb-2">{title}</h3>
-
-	{metrics.length > 1 && (
-		<div class="flex gap-2 mb-3">
-			{metrics.map((m, i) => (
-				<button
-					type="button"
-					class={`bar-metric-toggle ${pill} border border-darkblue/20 dark:border-white/20 ${i === 0 ? 'bg-darkblue/10 dark:bg-white/10' : 'opacity-50 hover:opacity-100'}`}
-					data-metric={i}
-				>
-					{m.name}
-				</button>
-			))}
-		</div>
-	)}
 
 	{views.length > 1 && (
 		<div class="flex gap-2 mb-4">
@@ -95,6 +81,20 @@ const pill = 'px-3 py-1 text-xs rounded-full hover:opacity-80 transition-all fon
 			{first.textEnd.hours}
 		</div>
 	</div>
+
+	{metrics.length > 1 && (
+		<div class="flex gap-2 mt-9">
+			{metrics.map((m, i) => (
+				<button
+					type="button"
+					class={`bar-metric-toggle ${pill} border border-darkblue/20 dark:border-white/20 ${i === 0 ? 'bg-darkblue/10 dark:bg-white/10' : 'opacity-50 hover:opacity-100'}`}
+					data-metric={i}
+				>
+					{m.name}
+				</button>
+			))}
+		</div>
+	)}
 </div>
 
 <script>

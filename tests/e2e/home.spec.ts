@@ -25,7 +25,7 @@ test.describe('Home Page', () => {
     await expect(page.locator('html')).toHaveAttribute('data-experiment', 'off');
     await expect(prognosisHeader).toBeHidden();
 
-    await page.getByRole('button', { name: 'Experiment', exact: true }).click();
+    await page.getByRole('button', { name: 'Beta', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-experiment', 'on');
     await expect(prognosisHeader).toBeVisible();
 
