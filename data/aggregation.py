@@ -1,7 +1,7 @@
 import requests
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from quality import (  # noqa: F401  (calculate_quality is re-exported for the tests)
     LOCAL_TZ,
@@ -9,8 +9,9 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     daily_radiation_series,
     daily_rain_series,
     fill_gaps,
-    latest_rain_timestamp,
-    prepare_rain_records,
+    hourly_rain_series,
+    newest_hour,
+    parse_hourly_rain,
     radiation_by_date,
     radiation_window,
     rain_windows,
@@ -21,7 +22,12 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 API = 'https://data.bs.ch/api/v2/catalog/datasets'
 
 AIR_STATION_ID = '034003A7'  # Rheinpromenade 2
-RAIN_STATION_ID = '034001AF'  # St. Johann
+
+# MeteoSwiss open data, station Basel-Binningen (BAS): hourly precipitation.
+# "recent" = 1 Jan of this year until yesterday, "now" = today.
+METEOSWISS = 'https://data.geo.admin.ch/ch.meteoschweiz.ogd-smn/bas/ogd-smn_bas_h_'
+RAIN_HOURS = 72  # bars of the rain chart = the three days that matter for the water quality
+RAIN_STALE_AFTER = timedelta(hours=3)
 
 
 def updateJsonFile( path, data ):
@@ -36,6 +42,28 @@ def get_json(url, **kwargs):
         return resp.json()
     except requests.exceptions.RequestException as e:
         raise SystemExit(e)
+
+
+def get_text(url):
+    try:
+        resp = requests.get(url=url, timeout=60)
+        resp.raise_for_status()
+        return resp.content.decode('utf-8-sig')
+    except requests.exceptions.RequestException as e:
+        raise SystemExit(e)
+
+
+def fetch_hourly_rain(now):
+    """Hourly rain of Basel-Binningen for the last ~32 days: {end of hour (UTC): mm}."""
+    kinds = ['recent', 'now']
+    if (now - timedelta(days=33)).year < now.year:
+        # early January: the window reaches into the previous year
+        decade = now.year // 10 * 10
+        kinds.insert(0, f'historical_{decade}-{decade + 9}')
+    rain = {}
+    for kind in kinds:
+        rain.update(parse_hourly_rain(get_text(f'{METEOSWISS}{kind}.csv')))
+    return rain
 
 
 def add_chart(target, name, url, field):
@@ -132,31 +160,25 @@ def fetch_quality(waterData, now=None):
     d = get_json(f'{API}/100254/records?select=date%2C%20gre000d0%20as%20globalRadiation&limit=40&pretty=false&timezone=UTC&order_by=date%20DESC')
     radiation = radiation_by_date([r['record']['fields'] for r in d['records']])
 
-    # Rain: hourly readings of the rolling 24h sum. 32 days cover the month chart.
-    rows = get_json(
-        f'{API}/100009/exports/json',
-        params={
-            'select': 'dates_max_date,meta_rain24h_sum',
-            'where': f'name_original="{RAIN_STATION_ID}" and dates_max_date>=now(days=-32)',
-            'order_by': 'dates_max_date',
-            'timezone': 'UTC',
-        },
-    )
-    rain = prepare_rain_records(rows)
-    # The recommendation is as fresh as the latest rain reading (radiation only changes daily).
-    last_update = latest_rain_timestamp(rain) or now.strftime('%Y-%m-%dT%H:%M:%SZ')
+    # Rain: hourly totals of Basel-Binningen, labelled with the END of the hour
+    rain = fetch_hourly_rain(now)
+    end = newest_hour(rain)
+    if end is None:
+        raise SystemExit('no rain data available')
+    if now - end > RAIN_STALE_AFTER:
+        print(f'warning: newest rain value is from {end:%Y-%m-%d %H:%M} UTC, the feed seems to be late')
+    # The recommendation is as fresh as the newest rain hour (radiation only changes daily).
+    last_update = end.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # Recommendation inputs
-    rain_inputs = rain_windows(rain, now)  # [R0, R1, R2]
+    rain_inputs, rain_missing = rain_windows(rain, end)  # [R0, R1, R2]
     rad_inputs = radiation_window(radiation, today)  # [yesterday, 2 days ago, 3 days ago]
-    if None in rain_inputs:
-        print(f'rain data missing for {rain_inputs.count(None)} of 3 windows, counting as 0 mm')
+    if any(rain_missing):
+        print(f'rain: missing hours per 24h window {rain_missing}, counting as 0 mm')
     if None in rad_inputs:
         print(f'radiation data missing for {rad_inputs.count(None)} of 3 days, ignoring them')
-    rain_inputs = [0 if v is None else v for v in rain_inputs]
 
     waterTempLatest = waterData.get('actualValue', 0)
-
     prognosis = calculate_quality(rain_inputs, rad_inputs, waterTempLatest)
 
     # Charts, oldest -> newest, with the date of every value
@@ -177,7 +199,12 @@ def fetch_quality(waterData, now=None):
     }
 
     radiation_data = {'measure': 'globalRadiation', 'chart': {}}
-    rain_data = {'measure': 'rain', 'chart': {}}
+    rain_data = {
+        'measure': 'rain',
+        'source': 'MeteoSwiss, station Basel-Binningen',
+        'windowsMm': {'last24h': rain_inputs[0], 'from24to48h': rain_inputs[1], 'from48to72h': rain_inputs[2]},
+        'chart': {},
+    }
     for name, days in (('week', 7), ('month', 30)):
         values, dates = daily_radiation_series(radiation, today, days)
         radiation_data['chart'][name], gaps = fill_gaps(values)
@@ -185,11 +212,17 @@ def fetch_quality(waterData, now=None):
         if gaps:
             print(f'radiation {name}: {gaps} day(s) without data, filled with previous value')
 
-        values, dates = daily_rain_series(rain, now, days)
+        # Rain per Swiss calendar day (today = so far); the UI shows the hourly bars instead
+        values, dates = daily_rain_series(rain, end, days)
         rain_data['chart'][name], gaps = fill_gaps(values)
         rain_data['chart'][name + 'Dates'] = dates
         if gaps:
             print(f'rain {name}: {gaps} day(s) without data, filled with previous value')
+
+    # Hourly bars of the last 72 hours, oldest first; 'hourlyStarts' = start of each hour (UTC)
+    hourly, starts = hourly_rain_series(rain, end, RAIN_HOURS)
+    rain_data['chart']['hourly'] = [0 if v is None else v for v in hourly]
+    rain_data['chart']['hourlyStarts'] = starts
 
     qualityData['data'] = [radiation_data, rain_data]
     updateJsonFile('qualityData.json', qualityData)

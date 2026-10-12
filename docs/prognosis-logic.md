@@ -3,11 +3,11 @@
 This document defines the automated estimation logic used to determine if swimming in the Rhine at Basel is currently advisable. The recommendation is calculated by assessing two independent indices: **Water Quality** (microbiological risk) and **Swimmer Safety** (physical risk).
 
 ## Input Parameters
-Data is fetched every 15 minutes (radiation: one value per day) from the [Basel-Stadt Open Data Portal](https://data.bs.ch/).
+Data is fetched every 15 minutes (radiation: one value per day) from the [Basel-Stadt Open Data Portal](https://data.bs.ch/); the precipitation comes from the open data of [MeteoSwiss](https://opendatadocs.meteoswiss.ch/).
 
 | Parameter | Station | Unit | Metric Used |
 | :--- | :--- | :--- | :--- |
-| **Precipitation** | St. Johann (`034001AF`) | mm (rolling 24h sum, hourly readings) | Weighted 72h impact ($I$) |
+| **Precipitation** | MeteoSwiss Basel-Binningen (`BAS`, parameter `rre150h0`) | mm per hour | Weighted 72h impact ($I$) |
 | **Global Radiation** | MeteoSchweiz Basel-Binningen (dataset 100254, daily mean) | W/m² | Average of the last 3 complete days ($B$) |
 | **Water Temperature** | Weil am Rhein | °C | Latest ($T_{now}$), only used for the Swimmer Safety Index |
 
@@ -19,11 +19,15 @@ Rain triggers combined sewer overflows (CSO), increasing bacterial load. This im
 - $R_1$: Rain of the 24 hours before that, i.e. 24-48h ago (50% weight)
 - $R_2$: Rain 48-72h ago (25% weight)
 
-The station reports a *rolling* 24h sum with every reading. $R_0$ is the latest reading, $R_1$ the reading 24h earlier and $R_2$ the reading 48h earlier. Each window therefore covers a different 24 hours, so no rain is counted twice. A reading is only used if it is at most 3 hours older than the requested time; otherwise the window counts as 0 mm and a warning is logged.
+The hourly totals are summed over three consecutive 24-hour windows ending at the newest available hour: $R_0$ is the last 24 hours, $R_1$ the 24 hours before that, $R_2$ the 24 hours before that. Each rain hour falls into exactly one window, so no rain is counted twice. Hours without a value count as 0 mm and a warning is logged. The same hourly values are shown as bars in the rain chart (last 72 hours).
 
 **Formula:** $I = (R_0 \times 1.0) + (R_1 \times 0.5) + (R_2 \times 0.25)$
 
-> Do not use the *daily maximum* of the rolling sum as "rain of the day": right after midnight the window still contains the previous day, so a dry day after a rainy one would show the rain of the day before (and the weighted sum above would count it several times).
+**Time stamps:** MeteoSwiss labels a value with the *end* of its hour (UTC): the row `08:00` is the rain between 07:00 and 08:00.
+
+**Why Basel-Binningen and not the city's own sensors:** The "Smart Climate" sensors of the Basel-Stadt open data (dataset 100009, station St. Johann) were used before. They are raw, unvalidated readings of a single low-cost sensor. On 11 Oct 2026 it reported 9.4 mm of rain, the maximum of about 80 stations (median 0.0 mm, Binningen 0.0 mm). On 8 Oct 2026 it reported only 5.4 mm where Binningen measured 28.6 mm. Its hourly field (`meta_rain_1h_val`) adds up to only about a quarter of its own 24h sum. The other candidates are unusable too: the Rosental weather station (100294) stopped delivering in September 2026 and the Binningen air quality dataset (100051) has no precipitation values. Binningen is about 5 km from the Rhine, but it is a validated reference station, and the global radiation already comes from the same station.
+
+> Do not derive "rain of the day" from a *rolling* 24h sum (for example the daily maximum): right after midnight the window still contains the previous day, so a dry day after a rainy one would show the rain of the day before, and the weighted sum would count it several times.
 
 ### B. Radiation Bonus ($B$)
 Global radiation acts as a natural disinfectant. High radiation speeds up the inactivation of fecal indicators (e.g., *E. coli*).

@@ -3,13 +3,12 @@
 No network access and no file I/O in here, so everything can be unit tested
 with fixed example data (see tests/backend/).
 """
-from datetime import datetime, time, timedelta, timezone
+import csv
+import io
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 LOCAL_TZ = ZoneInfo('Europe/Zurich')
-
-# The rain station reports roughly hourly. A reading older than this is treated as missing.
-RAIN_MAX_GAP = timedelta(hours=3)
 
 RAD_THRESHOLD = 170  # W/m², reference for a sunny day (24h mean)
 
@@ -102,56 +101,76 @@ def series_from_records(records, field):
 
 
 # --- Rain -------------------------------------------------------------------
-# The station reports `meta_rain24h_sum`, a ROLLING sum: rain of the 24 hours
-# before the reading. Taking the daily maximum of it (as done before) attributes
-# yesterday's rain to today, because the window still contains it after midnight.
-# Reading the rolling sum at fixed points in time gives non-overlapping windows.
+# Source: MeteoSwiss open data, station Basel-Binningen, hourly precipitation
+# totals (`rre150h0`). The timestamp of a value is the END of its hour (UTC):
+# the row "08:00" is the rain that fell between 07:00 and 08:00.
+#
+# The city's own "Smart Climate" sensors (St. Johann) were used before. Those
+# are raw, unvalidated readings: on 11 Oct 2026 the station reported 9.4 mm
+# (the maximum of ~80 stations, median 0.0, Binningen 0.0) and on 8 Oct only
+# 5.4 mm where Binningen measured 28.6 mm.
 
-def prepare_rain_records(rows):
-    """[{'dates_max_date': iso, 'meta_rain24h_sum': mm}, ...] -> sorted [(datetime, mm)], skipping nulls."""
-    rain = [(parse_timestamp(r['dates_max_date']), r['meta_rain24h_sum'])
-            for r in rows
-            if r.get('dates_max_date') and r.get('meta_rain24h_sum') is not None]
-    rain.sort(key=lambda item: item[0])
+HOURLY_RAIN_COLUMN = 'rre150h0'
+
+
+def parse_hourly_rain(csv_text, column=HOURLY_RAIN_COLUMN):
+    """MeteoSwiss OGD hourly CSV -> {end of hour (UTC datetime): mm or None}."""
+    rain = {}
+    for row in csv.DictReader(io.StringIO(csv_text), delimiter=';'):
+        end = datetime.strptime(row['reference_timestamp'], '%d.%m.%Y %H:%M').replace(tzinfo=timezone.utc)
+        raw = (row.get(column) or '').strip()
+        rain[end] = float(raw) if raw not in ('', '-') else None
     return rain
 
 
-def latest_rain_timestamp(rain):
-    """ISO timestamp (UTC) of the newest rain reading, or None without data."""
-    return rain[-1][0].astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ') if rain else None
+def newest_hour(rain):
+    """End of the newest hour that has a value, or None."""
+    return max((t for t, v in rain.items() if v is not None), default=None)
 
 
-def rain_24h_at(rain, when):
-    """Rolling 24h rain sum at `when`: latest reading not after it, or None if missing/too old."""
-    for t, value in reversed(rain):
-        if t <= when:
-            return value if when - t <= RAIN_MAX_GAP else None
-    return None
+def hourly_rain_series(rain, end, hours):
+    """The `hours` hours up to and including the hour ending at `end`, oldest first.
+
+    Returns (values, starts): mm per hour (None = missing) and the ISO start
+    time (UTC) of each hour.
+    """
+    ends = [end - timedelta(hours=i) for i in range(hours - 1, -1, -1)]
+    values = [rain.get(e) for e in ends]
+    starts = [(e - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ') for e in ends]
+    return values, starts
 
 
-def rain_windows(rain, now):
-    """[R0, R1, R2]: rain of the last 24h, 24-48h ago, 48-72h ago. None where data is missing."""
-    return [rain_24h_at(rain, now - timedelta(hours=24 * i)) for i in range(3)]
+def rain_windows(rain, end):
+    """[R0, R1, R2] with the number of missing hours of each window.
+
+    R0 = rain of the 24 hours up to `end`, R1 = the 24 hours before that,
+    R2 = the 24 hours before that. Windows do not overlap. Missing hours count
+    as 0 mm. Returns (sums, missing_hours).
+    """
+    sums, missing = [], []
+    for i in range(3):
+        values, _ = hourly_rain_series(rain, end - timedelta(hours=24 * i), 24)
+        sums.append(round(sum(v for v in values if v is not None), 1))
+        missing.append(values.count(None))
+    return sums, missing
 
 
-def daily_rain_series(rain, now, days):
+def daily_rain_series(rain, end, days):
     """Rain per Swiss calendar day, oldest first: (values, ISO dates).
 
-    A finished day is the 24h window ending at its local midnight; today is the
-    last 24h up to `now`. Windows of consecutive days do not overlap.
+    The last day is today so far (up to the hour ending at `end`). None if no
+    hour of a day has a value.
     """
-    today = now.astimezone(LOCAL_TZ).date()
-    values, dates = [], []
-    for offset in range(days - 1, -1, -1):
-        day = today - timedelta(days=offset)
-        if offset == 0:
-            when = now
-        else:
-            midnight = datetime.combine(day + timedelta(days=1), time.min, tzinfo=LOCAL_TZ)
-            when = midnight.astimezone(timezone.utc) - timedelta(seconds=1)
-        values.append(rain_24h_at(rain, when))
-        dates.append(day.isoformat())
-    return values, dates
+    last_day = (end - timedelta(hours=1)).astimezone(LOCAL_TZ).date()
+    totals = {}
+    for t, v in rain.items():
+        if v is None or t > end:
+            continue
+        day = (t - timedelta(hours=1)).astimezone(LOCAL_TZ).date()
+        totals[day] = totals.get(day, 0) + v
+    dates = [last_day - timedelta(days=i) for i in range(days - 1, -1, -1)]
+    values = [round(totals[d], 1) if d in totals else None for d in dates]
+    return values, [d.isoformat() for d in dates]
 
 
 # --- Global radiation -------------------------------------------------------

@@ -1,6 +1,7 @@
 ---
 import Icon from './Icon.astro';
 import LineChart from './LineChart.astro';
+import BarChart from './BarChart.astro';
 import LocalTime from './LocalTime.astro';
 
 interface Props {
@@ -56,6 +57,17 @@ const safetyStatus = safetyIndexMap[indices?.safety as keyof typeof safetyIndexM
 
 const radiationData = data.find(d => d.measure === 'globalRadiation');
 const rainData = data.find(d => d.measure === 'rain');
+
+// Hourly bars. Data in the old format (daily values only) falls back to the line chart.
+const hourlyRain = rainData?.chart?.hourly as number[] | undefined;
+const rainWindows = rainData?.windowsMm;
+const mm = (v: number) => v.toFixed(1);
+const rainWindowsText = rainWindows
+	? t.rainWindows
+		.replace('%r0%', mm(rainWindows.last24h))
+		.replace('%r1%', mm(rainWindows.from24to48h))
+		.replace('%r2%', mm(rainWindows.from48to72h))
+	: '';
 ---
 
 <section class="bg-darkblue/5 dark:bg-white/5 rounded-2xl p-6 transition-all duration-200 hover:bg-darkblue/[0.08] dark:hover:bg-white/[0.08]">
@@ -100,16 +112,29 @@ const rainData = data.find(d => d.measure === 'rain');
 					{rainData && (
 						<div class="space-y-2">
 							<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">{t.rainChartTitle}</h3>
-							<LineChart 
-								id="rain-chart"
-								dataWeek={rainData.chart.week}
-								dataMonth={rainData.chart.month}
-								textWeek={t.week}
-								textMonth={t.month}
-								textToday={t.today}
-								lastUpdate=""
-								updateLabel=""
-							/>
+							{hourlyRain ? (
+								<>
+									<BarChart
+										id="rain-chart"
+										data={hourlyRain}
+										starts={rainData.chart.hourlyStarts}
+										dateLocale={t.dateLocale}
+										textNow={t.now}
+									/>
+									{rainWindowsText && <p class="text-xs opacity-70 font-medium">{rainWindowsText}</p>}
+								</>
+							) : (
+								<LineChart 
+									id="rain-chart"
+									dataWeek={rainData.chart.week}
+									dataMonth={rainData.chart.month}
+									textWeek={t.week}
+									textMonth={t.month}
+									textToday={t.today}
+									lastUpdate=""
+									updateLabel=""
+								/>
+							)}
 						</div>
 					)}
 					{radiationData && (

@@ -1,0 +1,144 @@
+---
+interface Props {
+	id: string;
+	/** value per bar, oldest first */
+	data: number[];
+	/** ISO start time (UTC) of each bar, used for the weekday labels at midnight */
+	starts: string[];
+	/** BCP 47 locale for the weekday names */
+	dateLocale?: string;
+	textNow?: string;
+}
+
+const { id, data, starts, dateLocale = 'de-CH', textNow = 'Now' } = Astro.props;
+---
+
+<div
+	class="bar-chart-container chart-container relative w-full my-4 pb-8"
+	data-id={id}
+	data-values={JSON.stringify(data)}
+	data-starts={JSON.stringify(starts)}
+	data-locale={dateLocale}
+>
+	<div class="relative h-[180px] w-full chart-wrapper">
+		<canvas id={`canvas-${id}`}></canvas>
+
+		<div class="absolute bottom-[-25px] right-0 px-2 text-[10px] font-bold opacity-40 pointer-events-none">
+			{textNow}
+		</div>
+	</div>
+</div>
+
+<script>
+	import Chart from 'chart.js/auto';
+
+	const instances = new Map<string, any>();
+
+	const getThemeColors = () => {
+		const isDark = document.documentElement.classList.contains('dark');
+		return {
+			bar: isDark ? '#FFFFFF' : '#002855',
+			grid: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 40, 85, 0.15)'
+		};
+	};
+
+	const setupCharts = () => {
+		document.querySelectorAll('.bar-chart-container').forEach(container => {
+			const id = container.getAttribute('data-id');
+			if (!id || instances.has(id)) return;
+
+			const values: number[] = JSON.parse(container.getAttribute('data-values') || '[]');
+			const starts: string[] = JSON.parse(container.getAttribute('data-starts') || '[]');
+			const locale = container.getAttribute('data-locale') || 'de-CH';
+			const canvas = container.querySelector('canvas') as HTMLCanvasElement;
+			if (!canvas) return;
+
+			// Day boundaries and weekday names always in Basel time, whatever the device's time zone is.
+			const hourOfDay = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Zurich' });
+			const weekday = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'Europe/Zurich' });
+			const isMidnight = starts.map(s => Number(hourOfDay.format(new Date(s))) === 0);
+			const labels = starts.map((s, i) => (isMidnight[i] ? weekday.format(new Date(s)) : ''));
+
+			const colors = getThemeColors();
+			const tickFont = { size: 10, weight: 'bold' as const };
+
+			const chart = new Chart(canvas, {
+				type: 'bar',
+				data: {
+					labels,
+					datasets: [{
+						data: values,
+						backgroundColor: colors.bar,
+						borderRadius: 2,
+						barPercentage: 0.8,
+						categoryPercentage: 1
+					}]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					animation: { duration: 300 },
+					plugins: {
+						legend: { display: false },
+						tooltip: { enabled: false }
+					},
+					scales: {
+						x: {
+							border: { display: false },
+							ticks: {
+								color: colors.bar,
+								font: tickFont,
+								autoSkip: false,
+								maxRotation: 0,
+								align: 'start',
+								callback: (_: any, i: number) => labels[i]
+							},
+							grid: {
+								drawTicks: false,
+								// a line at the start of every day
+								color: (ctx: any) => (isMidnight[ctx.index] ? getThemeColors().grid : 'transparent')
+							}
+						},
+						y: {
+							beginAtZero: true,
+							// keep a few tenths of a millimetre of drizzle visually small
+							suggestedMax: 2,
+							border: { display: false },
+							ticks: { color: colors.bar, font: tickFont, maxTicksLimit: 5 },
+							grid: { color: colors.grid }
+						}
+					}
+				}
+			});
+
+			instances.set(id, chart);
+
+			// Resize handling for the initially collapsed (hidden) state
+			const wrapper = container.querySelector('.chart-wrapper');
+			if (wrapper) {
+				const ro = new ResizeObserver(() => {
+					if (wrapper.clientHeight > 0) chart.resize();
+				});
+				ro.observe(wrapper);
+			}
+		});
+	};
+
+	if (document.readyState === 'complete') {
+		setupCharts();
+	} else {
+		window.addEventListener('load', setupCharts);
+	}
+	document.addEventListener('astro:after-swap', setupCharts);
+
+	new MutationObserver(() => {
+		const colors = getThemeColors();
+		instances.forEach(chart => {
+			chart.data.datasets[0].backgroundColor = colors.bar;
+			chart.options.scales.x.ticks.color = colors.bar;
+			chart.options.scales.y.ticks.color = colors.bar;
+			chart.options.scales.y.grid.color = colors.grid;
+			chart.update('none');
+		});
+	}).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+</script>

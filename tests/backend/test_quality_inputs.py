@@ -1,6 +1,4 @@
-import json
-from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from quality import (
@@ -9,18 +7,19 @@ from quality import (
     daily_radiation_series,
     daily_rain_series,
     fill_gaps,
-    latest_rain_timestamp,
-    prepare_rain_records,
+    hourly_rain_series,
+    newest_hour,
+    parse_hourly_rain,
     radiation_by_date,
     radiation_window,
-    rain_24h_at,
     rain_windows,
     series_from_records,
 )
 
-# Real hourly readings of the rain station (rolling 24h sum) from data.bs.ch,
-# 3-9 Oct 2026. 5 Oct had rain, 6 Oct was dry, it rained again on 8 Oct.
-FIXTURE = Path(__file__).parent / 'fixtures' / 'rain_station_2026-10-03_to_09.json'
+# Real hourly precipitation of MeteoSwiss station Basel-Binningen, 6-12 Oct 2026.
+# 8 Oct was a heavy rain day (28.6 mm, 16.5 mm of it in one hour), 11 Oct was dry.
+# The timestamp is the END of the hour (UTC).
+FIXTURE = Path(__file__).parent / 'fixtures' / 'meteoswiss_bas_hourly_2026-10-06_to_12.csv'
 
 
 def utc(*args):
@@ -28,66 +27,99 @@ def utc(*args):
 
 
 def load_rain():
-    return prepare_rain_records(json.loads(FIXTURE.read_text()))
+    return parse_hourly_rain(FIXTURE.read_text(encoding='utf-8'))
 
 
-def test_dry_day_after_rain_is_not_reported_as_rain():
-    # The old logic took the maximum of the rolling sum per UTC day. On 6 Oct the
-    # sum starts at 2.2 mm (rain of 5 Oct still in the window) and falls to 0.
+def test_parse_hourly_rain_keeps_the_end_of_hour_timestamp():
     rain = load_rain()
-    by_day = defaultdict(list)
-    for t, mm in rain:
-        by_day[t.date().isoformat()].append(mm)
-    assert max(by_day['2026-10-06']) == 2.2  # what the old logic reported for a dry day
-
-    values, dates = daily_rain_series(rain, utc(2026, 10, 9, 15, 0), 7)
-    per_day = dict(zip(dates, values))
-    assert per_day['2026-10-05'] == 2.2  # the rainy day
-    assert per_day['2026-10-06'] == 0.0  # the dry day
-    assert per_day['2026-10-07'] == 0.0
+    assert rain[utc(2026, 10, 8, 13, 0)] == 16.5  # rain between 12:00 and 13:00 UTC
+    assert newest_hour(rain) == utc(2026, 10, 12, 8, 0)
 
 
-def test_daily_rain_series_is_ordered_old_to_new_with_dates():
-    values, dates = daily_rain_series(load_rain(), utc(2026, 10, 9, 15, 0), 7)
-    assert dates == ['2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06',
-                     '2026-10-07', '2026-10-08', '2026-10-09']
-    # today is the rolling sum of the last 24h
-    assert values == [1.6, 1.2, 2.2, 0.0, 0.0, 5.4, 7.2]
+def test_parse_hourly_rain_handles_missing_values():
+    rain = parse_hourly_rain('station_abbr;reference_timestamp;rre150h0\n'
+                             'BAS;12.10.2026 08:00;0.4\n'
+                             'BAS;12.10.2026 09:00;\n'
+                             'BAS;12.10.2026 10:00;-\n')
+    assert rain == {utc(2026, 10, 12, 8): 0.4, utc(2026, 10, 12, 9): None, utc(2026, 10, 12, 10): None}
+    assert newest_hour(rain) == utc(2026, 10, 12, 8)  # rows without a value are not "newest"
+
+
+def test_hourly_series_is_ordered_old_to_new_and_labelled_by_hour_start():
+    values, starts = hourly_rain_series(load_rain(), utc(2026, 10, 8, 13, 0), 3)
+    assert values == [0.4, 1.4, 16.5]
+    assert starts == ['2026-10-08T10:00:00Z', '2026-10-08T11:00:00Z', '2026-10-08T12:00:00Z']
+
+
+def test_hourly_series_marks_missing_hours_as_none():
+    rain = {utc(2026, 10, 12, 8): 0.4}
+    values, _ = hourly_rain_series(rain, utc(2026, 10, 12, 9), 3)
+    assert values == [None, 0.4, None]
 
 
 def test_rain_windows_do_not_overlap():
     # [R0, R1, R2] = last 24h, 24-48h ago, 48-72h ago
-    assert rain_windows(load_rain(), utc(2026, 10, 9, 14, 10)) == [7.2, 3.0, 0.0]
-    # Evening of the dry day: nothing in the last 24h, the rain of 5 and 4 Oct is further back.
-    assert rain_windows(load_rain(), utc(2026, 10, 6, 21, 0)) == [0.0, 2.2, 1.2]
+    rain = {utc(2026, 10, 12, 8) - timedelta(hours=h): 1.0 for h in range(0, 72)}
+    rain[utc(2026, 10, 12, 8)] = 5.0                      # newest hour -> R0
+    rain[utc(2026, 10, 12, 8) - timedelta(hours=24)] = 2.0  # exactly 24h earlier -> R1
+    rain[utc(2026, 10, 12, 8) - timedelta(hours=48)] = 3.0  # exactly 48h earlier -> R2
+    sums, missing = rain_windows(rain, utc(2026, 10, 12, 8))
+    assert sums == [28.0, 25.0, 26.0]  # 23 x 1.0 + 5.0, 23 x 1.0 + 2.0, 23 x 1.0 + 3.0
+    assert missing == [0, 0, 0]
 
 
-def test_dry_evening_after_rain_is_rated_better_than_with_old_logic():
+def test_rain_windows_on_real_data():
     rain = load_rain()
-    now = utc(2026, 10, 6, 21, 0)
-    radiation = [173, 121, 165]  # 5, 4 and 3 Oct
-
-    # Old logic: maxima of the rolling sum per day [6 Oct, 5 Oct, 4 Oct] = [2.2, 3.0, 1.8]
-    old = calculate_quality([2.2, 3.0, 1.8], radiation, 19.0)
-    new = calculate_quality(rain_windows(rain, now), radiation, 19.0)
-    assert old['quality'] == 1
-    assert new['quality'] == 2
+    # Morning of 12 Oct: dry for 24h, a little drizzle on 10 Oct
+    assert rain_windows(rain, utc(2026, 10, 12, 8, 0)) == ([0.0, 1.4, 1.0], [0, 0, 0])
+    # The same rain moves one window back every 24h and is never counted twice:
+    assert rain_windows(rain, utc(2026, 10, 9, 8, 0))[0] == [24.3, 7.6, 0.0]
+    assert rain_windows(rain, utc(2026, 10, 10, 8, 0))[0] == [1.0, 24.3, 7.6]
 
 
-def test_missing_rain_data_is_none_not_zero():
-    rain = load_rain()
-    assert rain_24h_at(rain, utc(2026, 10, 2, 12, 0)) is None  # before the first reading
-    assert rain_24h_at(rain, utc(2026, 10, 9, 20, 0)) is None  # last reading is older than 3h
-    assert rain_24h_at(rain, utc(2026, 10, 9, 14, 10)) == 7.2
+def test_missing_hours_count_as_zero_and_are_reported():
+    rain = {utc(2026, 10, 12, 8): 2.0, utc(2026, 10, 12, 7): None}
+    sums, missing = rain_windows(rain, utc(2026, 10, 12, 8))
+    assert sums[0] == 2.0
+    assert missing[0] == 23  # only the newest hour is known
+    assert missing[1] == 24 and missing[2] == 24
 
 
-def test_rain_day_boundaries_use_swiss_time():
-    # Basel is on CEST (UTC+2) in October: the local day 6 Oct ends at 6 Oct 22:00 UTC.
-    # The reading of 21:09 UTC is still on the 6th, the one of 22:09 UTC is already on the 7th.
-    rain = [(utc(2026, 10, 6, 21, 9), 1.0), (utc(2026, 10, 6, 22, 9), 4.0)]
-    values, dates = daily_rain_series(rain, utc(2026, 10, 8, 12, 0), 3)
+def test_dry_day_is_not_reported_as_rain():
+    # 11 Oct: the day the single St. Johann sensor of the city's "Smart Climate" network
+    # reported 9.4 mm (maximum of ~80 stations, median 0.0). Binningen: dry.
+    values, dates = daily_rain_series(load_rain(), utc(2026, 10, 12, 8, 0), 7)
     per_day = dict(zip(dates, values))
-    assert per_day['2026-10-06'] == 1.0  # 22:09 UTC is already 7 Oct locally
+    assert per_day['2026-10-11'] == 0.0
+    assert per_day['2026-10-08'] == 28.6
+    assert dates[-1] == '2026-10-12'  # today so far
+
+
+def test_daily_rain_uses_swiss_days():
+    # CEST is UTC+2: the hour 21:00-22:00 UTC is 23:00-24:00 local (6 Oct),
+    # the hour 22:00-23:00 UTC is 00:00-01:00 local (7 Oct).
+    rain = {utc(2026, 10, 6, 22): 1.0, utc(2026, 10, 6, 23): 4.0}
+    values, dates = daily_rain_series(rain, utc(2026, 10, 6, 23), 2)
+    assert dict(zip(dates, values)) == {'2026-10-06': 1.0, '2026-10-07': 4.0}
+
+
+def test_daily_rain_ignores_days_without_data():
+    values, dates = daily_rain_series({utc(2026, 10, 12, 8): 0.4}, utc(2026, 10, 12, 8), 3)
+    assert dates == ['2026-10-10', '2026-10-11', '2026-10-12']
+    assert values == [None, None, 0.4]
+
+
+def test_dry_evening_after_rain_is_rated_by_the_last_24h_only():
+    rain = load_rain()
+    radiation = [173, 121, 165]
+    # Evening of 11 Oct: nothing fell in the last 24h
+    sums, _ = rain_windows(rain, utc(2026, 10, 11, 22, 0))
+    assert sums[0] == 0.0
+    assert calculate_quality(sums, radiation, 19.0)['quality'] == 2  # I = 0 + 1.2 + 0.0 -> good
+    # Right after the heavy rain of 8 Oct: R0 = 28.6 -> discouraged
+    sums, _ = rain_windows(rain, utc(2026, 10, 8, 23, 0))
+    assert sums[0] >= 20
+    assert calculate_quality(sums, radiation, 19.0)['quality'] == 1
 
 
 def test_radiation_is_matched_by_date():
@@ -142,8 +174,3 @@ def test_bucket_start_and_series():
 
 def test_fill_gaps_reports_number_of_gaps():
     assert fill_gaps([None, 1.0, None, None, 2.0]) == ([0, 1.0, 1.0, 1.0, 2.0], 3)
-
-
-def test_last_update_is_the_newest_rain_reading():
-    assert latest_rain_timestamp(load_rain()) == '2026-10-09T14:09:35Z'
-    assert latest_rain_timestamp([]) is None

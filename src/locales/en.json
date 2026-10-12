@@ -48,9 +48,12 @@
     "prognosisDescription": "This recommendation is based on precipitation, global radiation, and water temperature (safety & hygiene) over the last 72 hours.",
     "prognosisDetails": "Calculation details on Codeberg",
     "yesterday": "Yesterday",
-    "rainChartTitle": "Precipitation per day (mm)",
+    "rainChartTitle": "Precipitation per hour, last 3 days (mm)",
+    "rainWindows": "Total: last 24 h %r0% mm · 24–48 h %r1% mm · 48–72 h %r2% mm",
+    "now": "Now",
+    "dateLocale": "en-GB",
     "radiationChartTitle": "Radiation daily mean (W/m²)",
-    "prognosisChartNote": "Precipitation: sum of the 24 hours up to the end of each day, for today the last 24 hours. Radiation: 24-hour mean including the night (around 300 W/m² and more is a clear summer day), only available the following day.",
+    "prognosisChartNote": "Precipitation: hourly totals of the MeteoSwiss station Basel-Binningen (source: MeteoSwiss). Radiation: 24-hour mean including the night (around 300 W/m² and more is a clear summer day), only available the following day.",
     "seo": {
         "title": "rhygfuehl - current Rhine temperature in Basel",
         "description": "☀️ The air temperature at the Rhine in Basel is currently %airTemp% °C. The Rhine in Basel currently has a water temperature of %waterTemp% °C. rhygfuehl.ch shows the current Rhine temperature of Basel in a clear app."
