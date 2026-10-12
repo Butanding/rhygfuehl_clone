@@ -7,37 +7,50 @@ interface View {
 	dates?: string[];
 }
 
-interface Props {
-	id: string;
+/** One quantity that can be shown in the chart, e.g. rain, or radiation and sunshine. */
+interface Metric {
 	/** colour of the bars, see utils/chartTheme.ts */
-	kind: 'rain' | 'radiation';
-	/** accessible name of the chart */
-	label: string;
+	kind: 'rain' | 'radiation' | 'sunshine';
+	/** name in the heading and on the switch button */
+	name: string;
+	/** unit per view, shown in the heading */
+	units: { hours: string; week: string; month: string };
 	/** hourly bars of the last three days */
 	hours: View;
 	/** daily bars; the button is left out if missing */
 	week?: View;
 	month?: View;
+	/** label at the right end of the axis, per view */
+	textEnd: { hours: string; week: string; month: string };
+	/** y axis keeps at least this range, so small values stay visually small */
+	suggestedMax: { hours: number; days: number };
+	/** hard upper limit of the y axis, per view (e.g. 60 minutes, 100 %) */
+	max?: { hours?: number; days?: number };
+}
+
+interface Props {
+	id: string;
+	/** more than one metric shows a switch between them */
+	metrics: Metric[];
 	/** BCP 47 locale for the weekday names */
 	dateLocale?: string;
 	textHours: string;
 	textWeek: string;
 	textMonth: string;
-	/** label at the right end of the axis, per view */
-	textEnd: { hours: string; week: string; month: string };
-	/** y axis keeps at least this range, so small values stay visually small */
-	suggestedMax: { hours: number; days: number };
 }
 
-const { id, kind, label, hours, week, month, dateLocale = 'de-CH', textHours, textWeek, textMonth, textEnd, suggestedMax } = Astro.props;
+const { id, metrics, dateLocale = 'de-CH', textHours, textWeek, textMonth } = Astro.props;
 
-const modes = [
-	{ key: 'hours', text: textHours, view: hours },
-	{ key: 'week', text: textWeek, view: week },
-	{ key: 'month', text: textMonth, view: month }
-].filter(m => m.view && m.view.values.length > 0);
+const first = metrics[0];
+const views = [
+	{ key: 'hours', text: textHours, available: true },
+	{ key: 'week', text: textWeek, available: !!first.week && first.week.values.length > 0 },
+	{ key: 'month', text: textMonth, available: !!first.month && first.month.values.length > 0 }
+].filter(v => v.available);
 
-const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggestedMax };
+const config = { locale: dateLocale, metrics };
+const title = `${first.name} (${first.units.hours})`;
+const pill = 'px-3 py-1 text-xs rounded-full hover:opacity-80 transition-all font-bold z-10';
 ---
 
 <div
@@ -45,25 +58,41 @@ const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggeste
 	data-id={id}
 	data-config={JSON.stringify(config)}
 >
-	{modes.length > 1 && (
-		<div class="flex gap-2 mb-4">
-			{modes.map((m, i) => (
+	<h3 class="bar-title text-xs uppercase tracking-wider opacity-50 font-bold mb-2">{title}</h3>
+
+	{metrics.length > 1 && (
+		<div class="flex gap-2 mb-3">
+			{metrics.map((m, i) => (
 				<button
 					type="button"
-					class={`bar-time-toggle px-3 py-1 text-xs rounded-full hover:opacity-80 transition-all font-bold z-10 ${i === 0 ? 'bg-darkblue/10 dark:bg-white/10' : 'bg-darkblue/5 dark:bg-white/5 opacity-50 hover:opacity-100'}`}
-					data-mode={m.key}
+					class={`bar-metric-toggle ${pill} border border-darkblue/20 dark:border-white/20 ${i === 0 ? 'bg-darkblue/10 dark:bg-white/10' : 'opacity-50 hover:opacity-100'}`}
+					data-metric={i}
 				>
-					{m.text}
+					{m.name}
+				</button>
+			))}
+		</div>
+	)}
+
+	{views.length > 1 && (
+		<div class="flex gap-2 mb-4">
+			{views.map((v, i) => (
+				<button
+					type="button"
+					class={`bar-time-toggle ${pill} ${i === 0 ? 'bg-darkblue/10 dark:bg-white/10' : 'bg-darkblue/5 dark:bg-white/5 opacity-50 hover:opacity-100'}`}
+					data-mode={v.key}
+				>
+					{v.text}
 				</button>
 			))}
 		</div>
 	)}
 
 	<div class="relative h-[180px] w-full chart-wrapper">
-		<canvas id={`canvas-${id}`} role="img" aria-label={label}></canvas>
+		<canvas id={`canvas-${id}`} role="img" aria-label={title}></canvas>
 
 		<div class="end-label absolute bottom-[-25px] right-0 px-2 text-[10px] font-bold opacity-40 pointer-events-none">
-			{textEnd.hours}
+			{first.textEnd.hours}
 		</div>
 	</div>
 </div>
@@ -73,6 +102,7 @@ const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggeste
 	import { getChartColors, onThemeChange } from '../utils/chartTheme';
 
 	type Mode = 'hours' | 'week' | 'month';
+	type Kind = 'rain' | 'radiation' | 'sunshine';
 	const instances = new Map<string, any>();
 
 	const setupCharts = () => {
@@ -82,7 +112,7 @@ const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggeste
 
 			const config = JSON.parse(container.getAttribute('data-config') || '{}');
 			const canvas = container.querySelector('canvas') as HTMLCanvasElement;
-			if (!config.hours || !canvas) return;
+			if (!config.metrics?.length || !canvas) return;
 
 			// Day boundaries and weekday names always in Basel time, whatever the device's time zone is.
 			const hourOfDay = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Zurich' });
@@ -90,17 +120,24 @@ const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggeste
 			const weekdayOfDate = new Intl.DateTimeFormat(config.locale, { weekday: 'short', timeZone: 'UTC' });
 			const asDate = (d: string) => new Date(`${d}T12:00:00Z`);
 
-			// Labels and day lines of a view. "Marks" are the bars that start a new day (or week).
-			const describe = (mode: Mode) => {
-				const view = config[mode];
+			let metricIndex = 0;
+			let mode: Mode = 'hours';
+
+			// Labels and day lines of the current metric and view. "Marks" are the bars that start a new day (or week).
+			const describe = () => {
+				const metric = config.metrics[metricIndex];
+				const view = metric[mode];
+				const limit = metric.max?.[mode === 'hours' ? 'hours' : 'days'];
+				const max = mode === 'hours' ? metric.suggestedMax.hours : metric.suggestedMax.days;
+				const title = `${metric.name} (${metric.units[mode]})`;
 				if (mode === 'hours') {
 					const marks = view.starts.map((s: string) => Number(hourOfDay.format(new Date(s))) === 0);
 					const labels = view.starts.map((s: string, i: number) => (marks[i] ? weekdayLocal.format(new Date(s)) : ''));
-					return { values: view.values, labels, marks, max: config.suggestedMax.hours, bar: 0.8 };
+					return { metric, title, values: view.values, labels, marks, max, limit, bar: 0.8 };
 				}
 				if (mode === 'week') {
 					const labels = view.dates.map((d: string) => weekdayOfDate.format(asDate(d)));
-					return { values: view.values, labels, marks: labels.map(() => false), max: config.suggestedMax.days, bar: 0.7 };
+					return { metric, title, values: view.values, labels, marks: labels.map(() => false), max, limit, bar: 0.7 };
 				}
 				// month: a label and a line at every Monday
 				const marks = view.dates.map((d: string) => asDate(d).getUTCDay() === 1);
@@ -108,10 +145,10 @@ const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggeste
 					const date = asDate(d);
 					return marks[i] ? `${date.getUTCDate()}.${date.getUTCMonth() + 1}.` : '';
 				});
-				return { values: view.values, labels, marks, max: config.suggestedMax.days, bar: 0.7 };
+				return { metric, title, values: view.values, labels, marks, max, limit, bar: 0.7 };
 			};
 
-			let state = describe('hours');
+			let state = describe();
 			let colors = getChartColors();
 			const tickFont = { size: 10, weight: 'bold' as const };
 
@@ -121,7 +158,7 @@ const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggeste
 					labels: state.labels,
 					datasets: [{
 						data: state.values,
-						backgroundColor: colors[config.kind as 'rain' | 'radiation'],
+						backgroundColor: colors[state.metric.kind as Kind],
 						borderRadius: 2,
 						barPercentage: state.bar,
 						categoryPercentage: 1
@@ -154,6 +191,7 @@ const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggeste
 						y: {
 							beginAtZero: true,
 							suggestedMax: state.max,
+							max: state.limit,
 							border: { display: false },
 							ticks: { color: colors.text, font: tickFont, maxTicksLimit: 5 },
 							grid: { color: colors.grid }
@@ -162,26 +200,50 @@ const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggeste
 				}
 			});
 
-			instances.set(id, { chart, container, config });
+			instances.set(id, chart);
 
-			// View toggles: 3 days (hourly bars), week and month (daily bars)
+			const titleElement = container.querySelector('.bar-title');
+			const endLabel = container.querySelector('.end-label');
+
+			// Redraws the chart for the current metric and view
+			const render = () => {
+				state = describe();
+				if (titleElement) titleElement.textContent = state.title;
+				if (endLabel) endLabel.textContent = state.metric.textEnd[mode];
+				canvas.setAttribute('aria-label', state.title);
+				chart.data.labels = state.labels;
+				chart.data.datasets[0].data = state.values;
+				(chart.data.datasets[0] as any).backgroundColor = colors[state.metric.kind as Kind];
+				(chart.data.datasets[0] as any).barPercentage = state.bar;
+				(chart.options.scales as any).y.suggestedMax = state.max;
+				(chart.options.scales as any).y.max = state.limit;
+				chart.update();
+			};
+
+			const activate = (selector: string, active: Element) => {
+				container.querySelectorAll(selector).forEach(b => b.classList.add('opacity-50'));
+				active.classList.remove('opacity-50');
+			};
+
+			// Switch between the quantities (e.g. radiation | sunshine)
+			container.querySelectorAll('.bar-metric-toggle').forEach(btn => {
+				btn.addEventListener('click', e => {
+					e.preventDefault();
+					e.stopPropagation();
+					metricIndex = Number(btn.getAttribute('data-metric'));
+					activate('.bar-metric-toggle', btn);
+					render();
+				});
+			});
+
+			// Switch between the views: 3 days (hourly bars), week and month (daily bars)
 			container.querySelectorAll('.bar-time-toggle').forEach(btn => {
 				btn.addEventListener('click', e => {
 					e.preventDefault();
 					e.stopPropagation();
-					const mode = btn.getAttribute('data-mode') as Mode;
-					state = describe(mode);
-
-					container.querySelectorAll('.bar-time-toggle').forEach(b => b.classList.add('opacity-50'));
-					btn.classList.remove('opacity-50');
-					const endLabel = container.querySelector('.end-label');
-					if (endLabel) endLabel.textContent = config.textEnd[mode];
-
-					chart.data.labels = state.labels;
-					chart.data.datasets[0].data = state.values;
-					(chart.data.datasets[0] as any).barPercentage = state.bar;
-					(chart.options.scales as any).y.suggestedMax = state.max;
-					chart.update();
+					mode = btn.getAttribute('data-mode') as Mode;
+					activate('.bar-time-toggle', btn);
+					render();
 				});
 			});
 
@@ -197,7 +259,7 @@ const config = { kind, locale: dateLocale, hours, week, month, textEnd, suggeste
 			// Light/dark switch of the browser
 			onThemeChange(() => {
 				colors = getChartColors();
-				chart.data.datasets[0].backgroundColor = colors[config.kind as 'rain' | 'radiation'];
+				chart.data.datasets[0].backgroundColor = colors[state.metric.kind as Kind];
 				(chart.options.scales as any).x.ticks.color = colors.text;
 				(chart.options.scales as any).y.ticks.color = colors.text;
 				(chart.options.scales as any).y.grid.color = colors.grid;

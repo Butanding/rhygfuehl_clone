@@ -313,3 +313,24 @@ def sunshine_fraction(sunshine, end, hours=WINDOW_HOURS):
         possible += possible_sunshine_minutes(hour_end)
     fraction = min(1.0, shone / possible) if possible else None
     return fraction, values.count(None)
+
+
+def daily_sunshine_series(sunshine, end, days, min_hours=18):
+    """Sunshine share (percent of the possible duration) per complete Swiss calendar day, oldest first.
+
+    Like the daily radiation, today is left out. None if fewer than `min_hours` hours of a day have a value.
+    """
+    today = local_day(end)
+    dates = [today - timedelta(days=i) for i in range(days, 0, -1)]
+    wanted = set(dates)
+    shone, possible, count = {}, {}, {}
+    for t, v in sunshine.items():
+        day = local_day(t)
+        if v is None or t > end or day not in wanted:
+            continue
+        shone[day] = shone.get(day, 0) + v
+        possible[day] = possible.get(day, 0) + possible_sunshine_minutes(t)
+        count[day] = count.get(day, 0) + 1
+    values = [min(100, round(100 * shone[d] / possible[d])) if count.get(d, 0) >= min_hours and possible[d] else None
+              for d in dates]
+    return values, [d.isoformat() for d in dates]

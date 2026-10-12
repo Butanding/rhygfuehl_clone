@@ -13,7 +13,8 @@ export const getChartColors = () => {
 		grid: dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 40, 85, 0.15)',
 		// bars: clearly visible on both the dark blue and the light grey card
 		rain: dark ? '#5AB0FF' : '#1B6FD6',
-		radiation: dark ? '#FFC247' : '#E07B00'
+		radiation: dark ? '#FFC247' : '#E07B00',
+		sunshine: dark ? '#FFE566' : '#B38600'
 	};
 };
 

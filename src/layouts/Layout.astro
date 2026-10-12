@@ -59,6 +59,19 @@ const datasetSchema = {
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<!-- Experiment mode (shows the BETA tiles): read before the first paint so nothing flashes.
+		     ?experiment=on / ?experiment=off sets it, the choice is kept in localStorage. -->
+		<script is:inline>
+			(function () {
+				var on = false;
+				try {
+					var param = new URLSearchParams(location.search).get('experiment');
+					if (param === 'on' || param === 'off') localStorage.setItem('experiment', param);
+					on = localStorage.getItem('experiment') === 'on';
+				} catch (e) {}
+				document.documentElement.setAttribute('data-experiment', on ? 'on' : 'off');
+			})();
+		</script>
 		<link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
 		<meta name="generator" content={Astro.generator} />
 		
@@ -104,7 +117,19 @@ const datasetSchema = {
 			<h1 class="text-2xl font-bold">
 				<a href={withBase(lang === 'de' ? '/' : '/en/')}>rhygfuehl</a>
 			</h1>
-			<nav>
+			<nav class="flex flex-wrap items-center justify-end gap-1.5">
+				<div
+					class="flex bg-darkblue/5 dark:bg-white/5 p-1 rounded-full border border-darkblue/10 dark:border-white/10"
+					role="group"
+					aria-label={t.experimentMode}
+				>
+					<button type="button" class="experiment-option px-2.5 py-1.5 text-xs font-bold rounded-full transition-all duration-300" data-experiment-option="off" aria-pressed="true">
+						{t.experimentOff}
+					</button>
+					<button type="button" class="experiment-option px-2.5 py-1.5 text-xs font-bold rounded-full transition-all duration-300" data-experiment-option="on" aria-pressed="false">
+						{t.experimentOn}
+					</button>
+				</div>
 				<div class="flex bg-darkblue/5 dark:bg-white/5 p-1 rounded-full border border-darkblue/10 dark:border-white/10">
 					<a 
 						href={withBase('/')}
@@ -138,6 +163,26 @@ const datasetSchema = {
 			}
 			body {
 				font-family: 'TikTok Sans', sans-serif;
+			}
+			/* Experiment mode: BETA tiles are only shown when it is on (default: off) */
+			.experiment-only { display: none; }
+			html[data-experiment="on"] .experiment-only { display: block; }
+			/* the switch looks like the language switch: the active side is raised */
+			.experiment-option { opacity: 0.4; }
+			.experiment-option:hover { opacity: 1; }
+			html[data-experiment="off"] .experiment-option[data-experiment-option="off"],
+			html[data-experiment="on"] .experiment-option[data-experiment-option="on"] {
+				opacity: 1;
+				background: #ffffff;
+				color: #002855;
+				box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+			}
+			@media (prefers-color-scheme: dark) {
+				html[data-experiment="off"] .experiment-option[data-experiment-option="off"],
+				html[data-experiment="on"] .experiment-option[data-experiment-option="on"] {
+					background: #002855;
+					color: #ffffff;
+				}
 			}
 			.collapse-grid {
 				display: grid;
@@ -184,6 +229,28 @@ const datasetSchema = {
 			// Expose global manifest for DevTools / Model Context Inspector
 			(window as any).__webmcp = manifest;
 			(window as any).__webmcp_tools = manifest.tools;
+		</script>
+
+		<script is:inline>
+			// Experiment mode switch
+			document.addEventListener('DOMContentLoaded', () => {
+				const options = document.querySelectorAll('.experiment-option');
+				const sync = () => {
+					const on = document.documentElement.getAttribute('data-experiment') === 'on';
+					options.forEach(o => o.setAttribute('aria-pressed', String((o.getAttribute('data-experiment-option') === 'on') === on)));
+				};
+				sync();
+				options.forEach(option => {
+					option.addEventListener('click', () => {
+						const value = option.getAttribute('data-experiment-option');
+						document.documentElement.setAttribute('data-experiment', value);
+						try { localStorage.setItem('experiment', value); } catch (e) {}
+						sync();
+						// charts of a tile that was hidden need a new size
+						window.dispatchEvent(new Event('resize'));
+					});
+				});
+			});
 		</script>
 
 		<script is:inline>

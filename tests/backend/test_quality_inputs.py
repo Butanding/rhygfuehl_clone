@@ -8,6 +8,7 @@ from quality import (
     calculate_quality,
     daily_radiation_series,
     daily_rain_series,
+    daily_sunshine_series,
     fill_gaps,
     hourly_series,
     newest_hour,
@@ -256,6 +257,21 @@ def test_sunshine_fraction_matches_the_official_daily_values():
         fraction, missing = sunshine_fraction(sunshine, utc(2026, 10, day) + timedelta(days=1), 24)
         assert missing == 0
         assert abs(100 * fraction - percent) < 2.5
+
+
+def test_daily_sunshine_share_per_swiss_day_matches_the_official_values():
+    # MeteoSwiss relative sunshine duration (sremaxdv) of 6-11 Oct 2026: 93, 23, 0, 19, 3, 9 %
+    # (their day is 00-24 UTC, ours the Swiss day, hence a small tolerance)
+    values, dates = daily_sunshine_series(load_sunshine(), utc(2026, 10, 12, 8), 6)
+    assert dates == ['2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11']  # today is left out
+    for value, official in zip(values, [93, 23, 0, 19, 3, 9]):
+        assert abs(value - official) <= 4
+
+
+def test_daily_sunshine_share_is_capped_at_100_and_needs_enough_hours():
+    full_day = {utc(2026, 6, 20, 0) + timedelta(hours=h): 60.0 for h in range(1, 25)}  # more than possible
+    assert daily_sunshine_series(full_day, utc(2026, 6, 22, 8), 2)[0][0] == 100
+    assert daily_sunshine_series({utc(2026, 6, 20, 12): 60.0}, utc(2026, 6, 22, 8), 2)[0] == [None, None]
 
 
 def test_sunshine_fraction_of_the_last_72_hours():

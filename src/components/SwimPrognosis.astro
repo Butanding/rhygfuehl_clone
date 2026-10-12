@@ -57,6 +57,7 @@ const safetyStatus = safetyIndexMap[indices?.safety as keyof typeof safetyIndexM
 
 const radiationData = data.find(d => d.measure === 'globalRadiation');
 const rainData = data.find(d => d.measure === 'rain');
+const sunshineData = data.find(d => d.measure === 'sunshine');
 
 // Hourly bars. Data in the old format (daily values only) falls back to the line charts.
 const hourlyRain = rainData?.chart?.hourly as number[] | undefined;
@@ -77,7 +78,7 @@ const sunshineText = radiationData?.sunshineLast72hPercent != null
 	: '';
 ---
 
-<section class="bg-darkblue/5 dark:bg-white/5 rounded-2xl p-6 transition-all duration-200 hover:bg-darkblue/[0.08] dark:hover:bg-white/[0.08]">
+<section class="experiment-only bg-darkblue/5 dark:bg-white/5 rounded-2xl p-6 transition-all duration-200 hover:bg-darkblue/[0.08] dark:hover:bg-white/[0.08]">
 	<div class="metric-toggle flex items-center justify-between cursor-pointer select-none h-24">
 		<div class="flex-1 min-w-0">
 			<div class="flex items-center gap-2 mb-1">
@@ -118,72 +119,95 @@ const sunshineText = radiationData?.sunshineLast72hPercent != null
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					{rainData && (
 						<div class="space-y-2">
-							<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">{t.rainChartTitle}</h3>
 							{hourlyRain ? (
 								<>
 									<BarChart
 										id="rain-chart"
-										kind="rain"
-										label={t.rainChartTitle}
-										hours={{ values: hourlyRain, starts: rainData.chart.hourlyStarts }}
-										week={{ values: rainData.chart.week, dates: rainData.chart.weekDates }}
-										month={{ values: rainData.chart.month, dates: rainData.chart.monthDates }}
 										dateLocale={t.dateLocale}
 										textHours={t.threeDays}
 										textWeek={t.week}
 										textMonth={t.month}
-										textEnd={{ hours: t.now, week: t.today, month: t.today }}
-										suggestedMax={{ hours: 2, days: 10 }}
+										metrics={[{
+											kind: 'rain',
+											name: t.rainName,
+											units: { hours: 'mm', week: 'mm', month: 'mm' },
+											hours: { values: hourlyRain, starts: rainData.chart.hourlyStarts },
+											week: { values: rainData.chart.week, dates: rainData.chart.weekDates },
+											month: { values: rainData.chart.month, dates: rainData.chart.monthDates },
+											textEnd: { hours: t.now, week: t.today, month: t.today },
+											suggestedMax: { hours: 2, days: 10 }
+										}]}
 									/>
 									{rainWindowsText && <p class="text-xs opacity-70 font-medium">{rainWindowsText}</p>}
 								</>
 							) : (
-								<LineChart 
-									id="rain-chart"
-									dataWeek={rainData.chart.week}
-									dataMonth={rainData.chart.month}
-									textWeek={t.week}
-									textMonth={t.month}
-									textToday={t.today}
-									lastUpdate=""
-									updateLabel=""
-								/>
+								<>
+									<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">{t.rainChartTitle}</h3>
+									<LineChart 
+										id="rain-chart"
+										dataWeek={rainData.chart.week}
+										dataMonth={rainData.chart.month}
+										textWeek={t.week}
+										textMonth={t.month}
+										textToday={t.today}
+										lastUpdate=""
+										updateLabel=""
+									/>
+								</>
 							)}
 						</div>
 					)}
 					{radiationData && (
 						<div class="space-y-2">
-							<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">{t.radiationChartTitle}</h3>
 							{hourlyRadiation ? (
 								<>
 									<BarChart
 										id="radiation-chart"
-										kind="radiation"
-										label={t.radiationChartTitle}
-										hours={{ values: hourlyRadiation, starts: radiationData.chart.hourlyStarts }}
-										week={{ values: radiationData.chart.week, dates: radiationData.chart.weekDates }}
-										month={{ values: radiationData.chart.month, dates: radiationData.chart.monthDates }}
 										dateLocale={t.dateLocale}
 										textHours={t.threeDays}
 										textWeek={t.week}
 										textMonth={t.month}
-										textEnd={{ hours: t.now, week: t.yesterday, month: t.yesterday }}
-										suggestedMax={{ hours: 300, days: 200 }}
+										metrics={[
+											{
+												kind: 'radiation',
+												name: t.radiationName,
+												units: { hours: 'W/m²', week: 'W/m²', month: 'W/m²' },
+												hours: { values: hourlyRadiation, starts: radiationData.chart.hourlyStarts },
+												week: { values: radiationData.chart.week, dates: radiationData.chart.weekDates },
+												month: { values: radiationData.chart.month, dates: radiationData.chart.monthDates },
+												textEnd: { hours: t.now, week: t.yesterday, month: t.yesterday },
+												suggestedMax: { hours: 300, days: 200 }
+											},
+											...(sunshineData?.chart?.hourly ? [{
+												kind: 'sunshine',
+												name: t.sunshineName,
+												units: { hours: t.sunshineUnitHour, week: '%', month: '%' },
+												hours: { values: sunshineData.chart.hourly, starts: sunshineData.chart.hourlyStarts },
+												week: { values: sunshineData.chart.week, dates: sunshineData.chart.weekDates },
+												month: { values: sunshineData.chart.month, dates: sunshineData.chart.monthDates },
+												textEnd: { hours: t.now, week: t.yesterday, month: t.yesterday },
+												suggestedMax: { hours: 60, days: 100 },
+												max: { hours: 60, days: 100 }
+											}] : [])
+										]}
 									/>
 									{radiationMeanText && <p class="text-xs opacity-70 font-medium">{radiationMeanText}</p>}
 									{sunshineText && <p class="text-xs opacity-70 font-medium">{sunshineText}</p>}
 								</>
 							) : (
-								<LineChart 
-									id="radiation-chart"
-									dataWeek={radiationData.chart.week}
-									dataMonth={radiationData.chart.month}
-									textWeek={t.week}
-									textMonth={t.month}
-									textToday={t.yesterday}
-									lastUpdate=""
-									updateLabel=""
-								/>
+								<>
+									<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">{t.radiationChartTitle}</h3>
+									<LineChart 
+										id="radiation-chart"
+										dataWeek={radiationData.chart.week}
+										dataMonth={radiationData.chart.month}
+										textWeek={t.week}
+										textMonth={t.month}
+										textToday={t.yesterday}
+										lastUpdate=""
+										updateLabel=""
+									/>
+								</>
 							)}
 						</div>
 					)}

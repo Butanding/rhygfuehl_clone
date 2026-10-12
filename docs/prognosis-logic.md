@@ -229,13 +229,18 @@ $$\text{level} = \min(\text{Water Quality}, \text{Swimmer Safety})$$
     { "measure": "rain",
       "source": "MeteoSwiss, station Basel-Binningen",
       "windowsMm": { "last24h": 0.0, "from24to48h": 0.8, "from48to72h": 1.6 },
-      "chart": { "hourly": [/* 72 mm */], "hourlyStarts": [/* */], "week": [], "weekDates": [], "month": [], "monthDates": [] } }
+      "chart": { "hourly": [/* 72 mm */], "hourlyStarts": [/* */], "week": [], "weekDates": [], "month": [], "monthDates": [] } },
+    { "measure": "sunshine",
+      "source": "MeteoSwiss, station Basel-Binningen",
+      "sharePercent72h": 13,
+      "chart": { "hourly": [/* 72 values, minutes of sun per hour, 0-60 */], "hourlyStarts": [/* */],
+                 "week": [/* 7, % of the possible duration */], "weekDates": [], "month": [/* 30 */], "monthDates": [] } }
   ]
 }
 ```
 
 - `hourly`: the 72 hourly values, oldest first; `hourlyStarts` is the start of each hour in UTC.
-- `week` / `month`: **daily** values per Swiss calendar day (Europe/Zurich), oldest first, with their `...Dates`. Rain: total per day, today = so far. Radiation: 24-hour mean (night included) of **complete** days; today is left out because a mean over the daylight hours so far is not comparable. These arrays are also what the WebMCP tool `get_history` returns.
+- `week` / `month`: **daily** values per Swiss calendar day (Europe/Zurich), oldest first, with their `...Dates`. Rain: total per day, today = so far. Radiation: 24-hour mean (night included) of **complete** days; today is left out because a mean over the daylight hours so far is not comparable. Sunshine: share of the possible sunshine duration per complete day, in percent. These arrays are also what the WebMCP tool `get_history` returns.
 - `waterData.json`, `airData.json`, `levelData.json` carry the bucket start times as `weekTimes` / `monthTimes` next to `week` / `month`.
 - Older data files without `hourly` still work: the tile then shows the previous line charts.
 
@@ -243,17 +248,19 @@ $$\text{level} = \min(\text{Water Quality}, \text{Swimmer Safety})$$
 
 ## 6. What the website shows
 
-The tile "Swimming Recommendation" (`SwimPrognosis.astro`) shows:
+**Experiment mode.** The recommendation is a BETA feature. The tile is **hidden by default** and only shown when the *experiment mode* is on. The switch sits at the top right, left of the language switch (`Off | Experiment`). The choice is kept in the browser (`localStorage`, key `experiment`) and applies to both languages. A link can set it, too: `?experiment=on` or `?experiment=off`. The state is set on the `<html>` element (`data-experiment`) before the first paint, so the tile does not flash. The data is calculated and loaded in any case; only the display is switched. The structured data (FAQ), `llms.txt` and the WebMCP interface still mention the recommendation.
+
+The tile "Swimming Recommendation" (`SwimPrognosis.astro`, the last tile of the page) shows:
 
 - the overall level, the two indices, a short description and a disclaimer;
-- a **rain chart** and a **radiation chart** (`BarChart.astro`), each with three views:
+- a **rain chart** and a **radiation chart** (`BarChart.astro`). The radiation chart has a switch **Radiation | Sunshine** (hourly: minutes of sun per hour; week and month: share of the possible duration per day in %). Both charts have three views:
   - **3 days**: 72 hourly bars. Weekday names and a line at every midnight (Basel time); "Now" at the right end;
   - **Week**: 7 daily bars with weekday names;
   - **Month**: 30 daily bars, labelled on Mondays;
 - under the rain chart the sums of the last 24 h / 24-48 h / 48-72 h ($R_0, R_1, R_2$), under the radiation chart the 72 h mean in W/m² and the sunshine share with the overcast limit;
 - the source (MeteoSwiss) and an explanation of the views.
 
-Colours: rain blue, radiation orange, adapted to the light/dark setting of the browser (`prefers-color-scheme`, see `src/utils/chartTheme.ts`).
+Colours: rain blue, radiation orange, sunshine yellow, adapted to the light/dark setting of the browser (`prefers-color-scheme`, see `src/utils/chartTheme.ts`).
 
 ---
 

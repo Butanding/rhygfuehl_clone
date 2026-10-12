@@ -11,6 +11,7 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     WINDOW_HOURS,
     calculate_quality,
     daily_radiation_series,
+    daily_sunshine_series,
     daily_rain_series,
     fill_gaps,
     hourly_series,
@@ -246,7 +247,24 @@ def fetch_quality(waterData, now=None):
         if gaps:
             print(f'radiation {name}: {gaps} day(s) without data, filled with previous value')
 
-    qualityData['data'] = [radiation_data, rain_data]
+    # Sunshine duration: minutes per hour for the 3-day view, share of the possible duration per day for week and month
+    sunshine_data = {
+        'measure': 'sunshine',
+        'source': source,
+        'sharePercent72h': None if sun_share is None else round(100 * sun_share),
+        'chart': {},
+    }
+    values, starts = hourly_series(sunshine, end, WINDOW_HOURS)
+    sunshine_data['chart']['hourly'] = [0 if v is None else v for v in values]
+    sunshine_data['chart']['hourlyStarts'] = starts
+    for name, days in (('week', 7), ('month', 30)):
+        values, dates = daily_sunshine_series(sunshine, end, days)
+        sunshine_data['chart'][name], gaps = fill_gaps(values)
+        sunshine_data['chart'][name + 'Dates'] = dates
+        if gaps:
+            print(f'sunshine {name}: {gaps} day(s) without data, filled with previous value')
+
+    qualityData['data'] = [radiation_data, rain_data, sunshine_data]
     updateJsonFile('qualityData.json', qualityData)
     return qualityData
 
