@@ -101,15 +101,6 @@ const faqSchema = {
 	<script type="application/ld+json" set:html={JSON.stringify(faqSchema)} />
 	
 	<div class="space-y-4">
-		<SwimPrognosis 
-			quality={qualityData.quality}
-			indices={qualityData.indices}
-			lastUpdate={qualityData.lastUpdate}
-			updateLabel={de.updateLabel}
-			t={de}
-			data={qualityData.data}
-		/>
-
 		<MetricCard 
 			id="water-chart"
 			title={de.waterTemp}
@@ -153,6 +144,15 @@ const faqSchema = {
 			textWeek={de.week}
 			textMonth={de.month}
 			textToday={de.today}
+		/>
+
+		<SwimPrognosis 
+			quality={qualityData.quality}
+			indices={qualityData.indices}
+			lastUpdate={qualityData.lastUpdate}
+			updateLabel={de.updateLabel}
+			t={de}
+			data={qualityData.data}
 		/>
 	</div>
 </Layout>
