@@ -45,7 +45,7 @@
     "prognosisGood": "Gut",
     "prognosisDiscouraged": "Abgeraten",
     "prognosisDisclaimer": "Automatisierte Schätzung basierend auf Wetterdaten. Keine offiziellen Labormessungen. Baden auf eigene Gefahr.",
-    "prognosisDescription": "Diese Empfehlung basiert auf Niederschlag, Globalstrahlung sowie der Wassertemperatur (Sicherheit & Hygiene) der letzten 72 Stunden.",
+    "prognosisDescription": "Diese Empfehlung basiert auf Niederschlag, Sonnenschein, Globalstrahlung sowie der Wassertemperatur (Sicherheit & Hygiene) der letzten 72 Stunden.",
     "prognosisDetails": "Details zur Berechnung auf Codeberg",
     "yesterday": "Gestern",
     "rainChartTitle": "Niederschlag (mm)",
@@ -55,6 +55,7 @@
     "radiationChartTitle": "Strahlung (W/m²)",
     "threeDays": "3 Tage",
     "radiationMean": "Mittel der letzten 72 h: %v% W/m²",
+    "sunshineMean": "Sonnenschein der letzten 72 h: %s% % der möglichen Dauer (unter 20 % gilt als bedeckt)",
     "prognosisChartNote": "Niederschlag und Strahlung: stündliche Messwerte der MeteoSchweiz-Station Basel-Binningen (Quelle: MeteoSchweiz). „3 Tage“ zeigt Stundenwerte, „Woche“ und „Monat“ Tageswerte (Niederschlag: Summe, Strahlung: Mittel über 24 Stunden inklusive Nacht; rund 300 W/m² und mehr entsprechen einem klaren Sommertag). Jüngerer Regen zählt für die Bewertung stärker als älterer.",
     "seo": {
         "title": "rhygfuehl - Aktuelle Rheintemperatur in Basel",

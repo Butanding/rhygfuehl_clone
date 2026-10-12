@@ -46,7 +46,7 @@ Current data for the Rhine in Basel:
 ## Swimming Prognosis Logic
 
 The swimming recommendation is calculated by assessing two independent indices:
-- **Water Quality** (microbiological risk): Focuses on bacterial risk from rain (sewer overflows) and lack of natural disinfection (global radiation).
+- **Water Quality** (microbiological risk): Focuses on bacterial risk from rain (sewer overflows) and lack of natural disinfection (sunshine duration and global radiation).
 - **Swimmer Safety** (physical risk): Focuses on immediate physical dangers, primarily cold shock (water temperature).
 
 ## Links

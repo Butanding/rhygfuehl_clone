@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from quality import (
+    OVERCAST_SUNSHINE,
     WINDOW_HOURS,
     bucket_start,
     calculate_quality,
@@ -11,11 +12,14 @@ from quality import (
     hourly_series,
     newest_hour,
     parse_hourly,
+    possible_sunshine_minutes,
     radiation_mean,
     rain_impact,
     rain_weight,
     rain_windows,
     series_from_records,
+    sun_elevation,
+    sunshine_fraction,
 )
 
 # Real hourly values of MeteoSwiss station Basel-Binningen, 6-12 Oct 2026.
@@ -32,6 +36,10 @@ def utc(*args):
 def load():
     text = FIXTURE.read_text(encoding='utf-8')
     return parse_hourly(text, 'rre150h0'), parse_hourly(text, 'gre000h0')
+
+
+def load_sunshine():
+    return parse_hourly(FIXTURE.read_text(encoding='utf-8'), 'sre000h0')
 
 
 # --- parsing and hourly series ---------------------------------------------
@@ -220,6 +228,72 @@ def test_real_data_after_the_heavy_rain_and_four_days_later():
         hours, _ = hourly_series(radiation, end, WINDOW_HOURS)
         result = calculate_quality(windows, hours, 19.0, rain_impact=rain_impact(rain, end))
         assert result['quality'] == expected  # 8 Oct: heavy rain; 12 Oct: 72h mean 86 W/m² is "overcast"
+
+
+# --- sunshine duration and the overcast rule --------------------------------
+
+def test_sun_elevation_is_plausible():
+    assert sun_elevation(utc(2026, 6, 21, 11, 0)) > 60   # near the summer solstice, around noon
+    assert 17 < sun_elevation(utc(2026, 12, 21, 11, 0)) < 21  # winter solstice, 90 - 47.5 - 23.4 = 19 degrees
+    assert sun_elevation(utc(2026, 6, 21, 0, 0)) < 0       # midnight
+
+
+def test_possible_sunshine_per_hour_and_day():
+    assert possible_sunshine_minutes(utc(2026, 6, 20, 12)) == 60  # hour 11-12 UTC
+    assert possible_sunshine_minutes(utc(2026, 6, 20, 1)) == 0    # night
+    day = lambda y, m, d: sum(possible_sunshine_minutes(utc(y, m, d) + timedelta(hours=h + 1)) for h in range(24))
+    # MeteoSwiss' own "possible" duration behind its relative sunshine (daily total / relative share):
+    # 1 Jan 392 min, 20 Jun 903 min. Within 9 %, the low winter sun is blocked more often than computed.
+    assert abs(day(2026, 1, 1) / 392 - 1) < 0.09
+    assert abs(day(2026, 6, 20) / 903 - 1) < 0.05
+
+
+def test_sunshine_fraction_matches_the_official_daily_values():
+    # MeteoSwiss relative sunshine duration (sremaxdv) of 6-11 Oct 2026: 93, 23, 0, 19, 3, 9 %
+    sunshine = load_sunshine()
+    official = {6: 93, 7: 23, 8: 0, 9: 19, 10: 3, 11: 9}
+    for day, percent in official.items():
+        fraction, missing = sunshine_fraction(sunshine, utc(2026, 10, day) + timedelta(days=1), 24)
+        assert missing == 0
+        assert abs(100 * fraction - percent) < 2.5
+
+
+def test_sunshine_fraction_of_the_last_72_hours():
+    fraction, missing = sunshine_fraction(load_sunshine(), utc(2026, 10, 12, 8))
+    assert missing == 0
+    assert abs(fraction - 0.133) < 0.01  # three grey days: 19 %, 3 %, 9 % of the possible sunshine
+
+
+def test_sunshine_fraction_ignores_missing_hours_on_both_sides():
+    # one sunny midday hour known, everything else missing: the fraction is that hour's share
+    fraction, missing = sunshine_fraction({utc(2026, 6, 20, 12): 30.0}, utc(2026, 6, 20, 12), 12)
+    assert fraction == 0.5 and missing == 11
+    assert sunshine_fraction({}, utc(2026, 6, 20, 12), 12)[0] is None
+    # only night hours known: nothing possible, no fraction
+    assert sunshine_fraction({utc(2026, 6, 20, 1): 0.0}, utc(2026, 6, 20, 1), 1)[0] is None
+
+
+def test_overcast_rule_uses_the_sunshine_share_when_available():
+    dry = [0, 0, 0]
+    dark = [85.0] * 72  # mean radiation 85 W/m² = 0.5 x 170
+    # little sun: capped, even if the radiation is high
+    assert calculate_quality(dry, [250.0] * 72, 20.0, rain_impact=0.0,
+                             sunshine_fraction=OVERCAST_SUNSHINE - 0.01)['quality'] == 1
+    # enough sun: no cap, although the radiation of a low autumn/winter sun is below 102 W/m²
+    assert calculate_quality(dry, dark, 20.0, rain_impact=0.0, sunshine_fraction=OVERCAST_SUNSHINE)['quality'] == 3
+    assert calculate_quality(dry, dark, 20.0, rain_impact=0.0, sunshine_fraction=0.9)['overcast'] is False
+
+
+def test_overcast_rule_falls_back_to_the_radiation_without_sunshine_data():
+    dry = [0, 0, 0]
+    assert calculate_quality(dry, [85.0] * 72, 20.0, rain_impact=0.0)['overcast'] is True   # 0.5 x 170
+    assert calculate_quality(dry, [105.0] * 72, 20.0, rain_impact=0.0)['overcast'] is False  # 0.62 x 170
+
+
+def test_overcast_does_not_touch_the_other_rules():
+    # Rain rules and bonuses still work as before when the sky is not overcast
+    assert calculate_quality([2.5, 0, 0], [250.0] * 72, 20.0, rain_impact=2.5, sunshine_fraction=0.7)['quality'] == 1  # R0 >= 2
+    assert calculate_quality([1.2, 0, 0], [250.0] * 72, 20.0, rain_impact=1.2, sunshine_fraction=0.7)['quality'] == 2
 
 
 # --- helpers -----------------------------------------------------------------

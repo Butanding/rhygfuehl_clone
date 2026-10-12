@@ -72,6 +72,9 @@ const rainWindowsText = rainWindows
 const radiationMeanText = radiationData?.meanLast72hWm2 != null
 	? t.radiationMean.replace('%v%', String(radiationData.meanLast72hWm2))
 	: '';
+const sunshineText = radiationData?.sunshineLast72hPercent != null
+	? t.sunshineMean.replace('%s%', String(radiationData.sunshineLast72hPercent))
+	: '';
 ---
 
 <section class="bg-darkblue/5 dark:bg-white/5 rounded-2xl p-6 transition-all duration-200 hover:bg-darkblue/[0.08] dark:hover:bg-white/[0.08]">
@@ -168,6 +171,7 @@ const radiationMeanText = radiationData?.meanLast72hWm2 != null
 										suggestedMax={{ hours: 300, days: 200 }}
 									/>
 									{radiationMeanText && <p class="text-xs opacity-70 font-medium">{radiationMeanText}</p>}
+									{sunshineText && <p class="text-xs opacity-70 font-medium">{sunshineText}</p>}
 								</>
 							) : (
 								<LineChart 

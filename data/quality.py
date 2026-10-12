@@ -5,6 +5,7 @@ with fixed example data (see tests/backend/).
 """
 import csv
 import io
+import math
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -15,8 +16,14 @@ RAD_THRESHOLD = 170  # W/m², reference for a sunny day (mean over 24h, night in
 # The recommendation looks at the last three days
 WINDOW_HOURS = 72
 
+# "Overcast" = less than this share of the possible sunshine duration of the last 72 hours.
+# Interim rule, see docs/prognosis-logic.md. 20 % is about as strict in summer as the earlier
+# rule "72 h mean radiation < 102 W/m²" (1-3 % of the days in June-August), but it does not
+# depend on the season.
+OVERCAST_SUNSHINE = 0.20
 
-def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impact=None):
+
+def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impact=None, sunshine_fraction=None):
     """Compute the swim recommendation.
 
     rain_week: [R0, R1, R2] = rain of the last 24h, 24-48h ago, 48-72h ago (mm)
@@ -24,6 +31,9 @@ def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impac
         resolution (hourly values or daily means). None entries are ignored.
     rain_impact: weighted rain impact I in mm. If omitted it is computed from the
         three windows with the weights 1 / 0.5 / 0.25 (see rain_impact()).
+    sunshine_fraction: share (0-1) of the possible sunshine duration of the last 72 hours.
+        Decides whether the sky counts as overcast. If None (no data), the earlier rule on
+        the mean radiation is used instead.
     """
     r0 = rain_week[0] if len(rain_week) > 0 else 0
     r1 = rain_week[1] if len(rain_week) > 1 else 0
@@ -48,7 +58,12 @@ def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impac
         quality_index = 2
 
     # Hard Scientific Caps (Safety First)
-    if rad_bonus < 0.6: # Overcast Penalty
+    # Overcast Penalty: little sun disinfects less, even without rain
+    if sunshine_fraction is not None:
+        overcast = sunshine_fraction < OVERCAST_SUNSHINE
+    else:
+        overcast = rad_bonus < 0.6  # fallback: mean radiation < 0.6 x 170 W/m²
+    if overcast:
         quality_index = min(quality_index, 1)
     if rain_impact >= 5.0: # Extreme Rain Impact
         quality_index = min(quality_index, 1)
@@ -66,7 +81,8 @@ def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impac
     return {
         'level': min(quality_index, safety_index),
         'quality': quality_index,
-        'safety': safety_index
+        'safety': safety_index,
+        'overcast': overcast
     }
 
 
@@ -114,6 +130,7 @@ def series_from_records(records, field):
 
 RAIN_COLUMN = 'rre150h0'
 RADIATION_COLUMN = 'gre000h0'
+SUNSHINE_COLUMN = 'sre000h0'  # sunshine duration, minutes per hour
 
 
 def parse_hourly(csv_text, column):
@@ -241,3 +258,58 @@ def daily_radiation_series(radiation, end, days, min_hours=18):
     values = [round(sum(per_day[d]) / len(per_day[d])) if len(per_day.get(d, [])) >= min_hours else None
               for d in dates]
     return values, [d.isoformat() for d in dates]
+
+
+# --- Sunshine duration ------------------------------------------------------
+# "Overcast" is judged by the sunshine duration relative to what is astronomically
+# possible. That share does not depend on the season, unlike the radiation in W/m²,
+# which stays below any fixed threshold on clear winter days.
+
+STATION_LAT = 47.5408  # Basel-Binningen
+STATION_LON = 7.5835
+# Sun counts as possible above this elevation. WMO sunshine needs a direct beam of 120 W/m²,
+# which a low sun does not deliver. 5° reproduces the "possible" minutes behind MeteoSwiss'
+# relative sunshine duration (sremaxdv) within about 4 % (about 8 % in midwinter).
+SUN_MIN_ELEVATION_DEG = 5
+
+
+def sun_elevation(when_utc):
+    """Elevation of the sun above the horizon in degrees at Basel-Binningen (NOAA approximation)."""
+    year_fraction = 2 * math.pi / 365 * (when_utc.timetuple().tm_yday - 1 + (when_utc.hour - 12) / 24)
+    equation_of_time = 229.18 * (0.000075 + 0.001868 * math.cos(year_fraction) - 0.032077 * math.sin(year_fraction)
+                                 - 0.014615 * math.cos(2 * year_fraction) - 0.040849 * math.sin(2 * year_fraction))
+    declination = (0.006918 - 0.399912 * math.cos(year_fraction) + 0.070257 * math.sin(year_fraction)
+                   - 0.006758 * math.cos(2 * year_fraction) + 0.000907 * math.sin(2 * year_fraction)
+                   - 0.002697 * math.cos(3 * year_fraction) + 0.00148 * math.sin(3 * year_fraction))
+    minutes = when_utc.hour * 60 + when_utc.minute + when_utc.second / 60
+    solar_time = (minutes + equation_of_time + 4 * STATION_LON) % 1440
+    hour_angle = math.radians(solar_time / 4 - 180)
+    latitude = math.radians(STATION_LAT)
+    sin_elevation = (math.sin(latitude) * math.sin(declination)
+                     + math.cos(latitude) * math.cos(declination) * math.cos(hour_angle))
+    return math.degrees(math.asin(max(-1.0, min(1.0, sin_elevation))))
+
+
+def possible_sunshine_minutes(hour_end):
+    """Minutes of the hour ending at `hour_end` (UTC) in which the sun is high enough to shine."""
+    start = hour_end - timedelta(hours=1)
+    return sum(1 for m in range(60)
+               if sun_elevation(start + timedelta(minutes=m, seconds=30)) > SUN_MIN_ELEVATION_DEG)
+
+
+def sunshine_fraction(sunshine, end, hours=WINDOW_HOURS):
+    """Share (0-1) of the possible sunshine duration of the last `hours` hours, and the number of missing hours.
+
+    Hours without a sunshine value are left out of both sides of the fraction. None if there is no
+    hour with possible sunshine and a value.
+    """
+    values, _ = hourly_series(sunshine, end, hours)
+    ends = [end - timedelta(hours=i) for i in range(hours - 1, -1, -1)]
+    shone = possible = 0
+    for hour_end, minutes in zip(ends, values):
+        if minutes is None:
+            continue
+        shone += minutes
+        possible += possible_sunshine_minutes(hour_end)
+    fraction = min(1.0, shone / possible) if possible else None
+    return fraction, values.count(None)

@@ -7,6 +7,7 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     LOCAL_TZ,
     RADIATION_COLUMN,
     RAIN_COLUMN,
+    SUNSHINE_COLUMN,
     WINDOW_HOURS,
     calculate_quality,
     daily_radiation_series,
@@ -19,6 +20,7 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     rain_impact,
     rain_windows,
     series_from_records,
+    sunshine_fraction,
 )
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
@@ -56,21 +58,22 @@ def get_text(url):
 
 
 def fetch_hourly(now):
-    """Hourly rain and radiation of Basel-Binningen for the last ~32 days.
+    """Hourly rain, radiation and sunshine duration of Basel-Binningen for the last ~32 days.
 
-    Returns two dicts {end of hour (UTC): value}.
+    Returns three dicts {end of hour (UTC): value}.
     """
     kinds = ['recent', 'now']
     if (now - timedelta(days=33)).year < now.year:
         # early January: the window reaches into the previous year
         decade = now.year // 10 * 10
         kinds.insert(0, f'historical_{decade}-{decade + 9}')
-    rain, radiation = {}, {}
+    rain, radiation, sunshine = {}, {}, {}
     for kind in kinds:
         text = get_text(f'{METEOSWISS}{kind}.csv')
         rain.update(parse_hourly(text, RAIN_COLUMN))
         radiation.update(parse_hourly(text, RADIATION_COLUMN))
-    return rain, radiation
+        sunshine.update(parse_hourly(text, SUNSHINE_COLUMN))
+    return rain, radiation, sunshine
 
 
 def add_chart(target, name, url, field):
@@ -162,8 +165,8 @@ def fetch_level():
 def fetch_quality(waterData, now=None):
     now = now or datetime.now(timezone.utc)
 
-    # Rain and global radiation: hourly values of Basel-Binningen, labelled with the END of the hour
-    rain, radiation = fetch_hourly(now)
+    # Rain, global radiation and sunshine duration: hourly values of Basel-Binningen, labelled with the END of the hour
+    rain, radiation, sunshine = fetch_hourly(now)
     end = newest_hour(rain)
     if end is None:
         raise SystemExit('no rain data available')
@@ -177,13 +180,18 @@ def fetch_quality(waterData, now=None):
     impact = rain_impact(rain, end)
     rad_hours, _ = hourly_series(radiation, end, WINDOW_HOURS)
     rad_mean, rad_missing = radiation_mean(radiation, end)
+    sun_share, sun_missing = sunshine_fraction(sunshine, end)
     if any(rain_missing):
         print(f'rain: missing hours per 24h window {rain_missing}, counting as 0 mm')
     if rad_missing:
         print(f'radiation: {rad_missing} of {WINDOW_HOURS} hours missing, ignoring them')
+    if sun_share is None:
+        print('sunshine duration not available, overcast is judged by the mean radiation')
+    elif sun_missing:
+        print(f'sunshine: {sun_missing} of {WINDOW_HOURS} hours missing, ignoring them')
 
     waterTempLatest = waterData.get('actualValue', 0)
-    prognosis = calculate_quality(rain_inputs, rad_hours, waterTempLatest, rain_impact=impact)
+    prognosis = calculate_quality(rain_inputs, rad_hours, waterTempLatest, rain_impact=impact, sunshine_fraction=sun_share)
 
     windows = {'last24h': rain_inputs[0], 'from24to48h': rain_inputs[1], 'from48to72h': rain_inputs[2]}
     qualityData = {
@@ -200,6 +208,8 @@ def fetch_quality(waterData, now=None):
             'rainImpactMm': impact,
             'radiationMeanWm2': None if rad_mean is None else round(rad_mean),
             'radiationHoursMissing': rad_missing,
+            'sunshineFraction': None if sun_share is None else round(sun_share, 3),
+            'overcast': prognosis['overcast'],
         },
         'data': [],
     }
@@ -209,6 +219,7 @@ def fetch_quality(waterData, now=None):
         'measure': 'globalRadiation',
         'source': source,
         'meanLast72hWm2': None if rad_mean is None else round(rad_mean),
+        'sunshineLast72hPercent': None if sun_share is None else round(100 * sun_share),
         'chart': {},
     }
     rain_data = {'measure': 'rain', 'source': source, 'windowsMm': windows, 'chart': {}}
