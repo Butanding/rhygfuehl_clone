@@ -160,6 +160,17 @@ def hourly_series(hourly, end, hours):
     return values, starts
 
 
+# More missing hours than this in the 72 h window and the data is not used: the source files are
+# updated with a delay (the "recent" file only after about 02:48 UTC), so right after midnight UTC a
+# whole day can be missing, and a calculation on what is left would be wrong.
+MAX_MISSING_HOURS = 3
+
+
+def missing_hours(series, end, hours=WINDOW_HOURS):
+    """Number of missing hours in the window of each series (a list of {hour end: value} dicts)."""
+    return [hourly_series(hourly, end, hours)[0].count(None) for hourly in series]
+
+
 def local_day(hour_end):
     """Swiss calendar day an hour (given by its end) belongs to."""
     return (hour_end - timedelta(hours=1)).astimezone(LOCAL_TZ).date()

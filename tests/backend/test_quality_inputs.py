@@ -10,7 +10,9 @@ from quality import (
     daily_rain_series,
     daily_sunshine_series,
     fill_gaps,
+    MAX_MISSING_HOURS,
     hourly_series,
+    missing_hours,
     newest_hour,
     parse_hourly,
     possible_sunshine_minutes,
@@ -310,6 +312,33 @@ def test_overcast_does_not_touch_the_other_rules():
     # Rain rules and bonuses still work as before when the sky is not overcast
     assert calculate_quality([2.5, 0, 0], [250.0] * 72, 20.0, rain_impact=2.5, sunshine_fraction=0.7)['quality'] == 1  # R0 >= 2
     assert calculate_quality([1.2, 0, 0], [250.0] * 72, 20.0, rain_impact=1.2, sunshine_fraction=0.7)['quality'] == 2
+
+
+# --- holes in the data -------------------------------------------------------
+
+def test_complete_data_has_no_missing_hours():
+    rain, radiation = load()
+    assert missing_hours([rain, radiation, load_sunshine()], utc(2026, 10, 12, 8)) == [0, 0, 0]
+
+
+def test_a_missing_day_is_detected():
+    # 01:43 UTC on 13 Oct 2026: the "recent" file was not yet updated, 12 Oct is missing entirely
+    rain, _ = load()
+    gap = {t: v for t, v in rain.items() if not (utc(2026, 10, 12, 0) <= t <= utc(2026, 10, 12, 23))}
+    gap[utc(2026, 10, 13, 0)] = 0.0
+    gap[utc(2026, 10, 13, 1)] = 0.0
+    holes = missing_hours([gap], utc(2026, 10, 13, 1))
+    assert holes == [24]
+    assert holes[0] > MAX_MISSING_HOURS
+
+
+def test_single_missing_hours_are_tolerated():
+    rain, _ = load()
+    rain = dict(rain)
+    del rain[utc(2026, 10, 11, 12)]
+    del rain[utc(2026, 10, 11, 13)]
+    assert missing_hours([rain], utc(2026, 10, 12, 8)) == [2]
+    assert 2 <= MAX_MISSING_HOURS
 
 
 # --- helpers -----------------------------------------------------------------

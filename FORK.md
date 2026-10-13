@@ -18,10 +18,14 @@ https://github.com/Butanding/rhygfuehl_clone/compare/upstream...main
 
 ## Automatisch
 
-- **Deploy to GitHub Pages:** bei jedem Push auf `main` und alle 30 Minuten. Führt vorher
-  `data/aggregation.py` aus und holt die Messdaten damit direkt von data.bs.ch, die Test-Seite
-  zeigt also die Wirkung der eigenen Berechnung. Nur wenn das fehlschlägt, werden die
-  Datendateien des Originals als Notlösung verwendet (Warnung im Lauf).
+- **Deploy to GitHub Pages:** bei jedem Push auf `main` und planmässig alle 30 Minuten (zu ruhigen
+  Minuten, GitHub lässt volle und halbe Stunden gern aus). Führt vorher `data/aggregation.py` aus und
+  holt die Messdaten damit direkt von MeteoSchweiz und data.bs.ch, die Test-Seite zeigt also die Wirkung
+  der eigenen Berechnung.
+  - Sind die Wetterdaten gerade lückenhaft (MeteoSchweiz ergänzt den Vortag erst gegen 02:50 UTC),
+    wird nichts gebaut und nichts veröffentlicht: die Seite behält ihre letzte gute Version.
+  - Schlägt die Aggregation anders fehl, schlägt der Lauf fehl, die Seite behält ihre letzte Version.
+    Einen Rückfall auf die Daten des Originals gibt es nicht mehr (es rechnet mit dem alten, fehlerhaften Modell).
   Die committeten `data/data/*.json` werden daher nicht von Hand angefasst, sonst gibt es
   Konflikte mit den Daten-Commits des Originals.
 - **Sync from upstream:** täglich. Aktualisiert `upstream` und merged es in `main`.

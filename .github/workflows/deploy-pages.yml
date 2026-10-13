@@ -1,14 +1,20 @@
 # Builds the site and publishes it to GitHub Pages as a test clone of rhygfuehl.ch.
 # Prerequisite: Settings -> Pages -> Source = "GitHub Actions".
-# Measurement data is generated on every run by our own data/aggregation.py;
-# the original's data files are only used as a fallback.
+# Measurement data is generated on every run by our own data/aggregation.py.
+# If the weather data has a hole (the MeteoSwiss files are updated with a delay, so right after
+# midnight UTC a whole day can be missing) nothing is built or published: the site keeps its
+# current version instead of showing a wrong rating. Any other error of the aggregation fails
+# the run; the site also keeps its current version then.
 name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [main]
   schedule:
-    - cron: '*/30 * * * *'
+    # GitHub delays or skips runs at the full and half hour, so use quieter minutes.
+    # The extra run follows the daily update of the MeteoSwiss "recent" file (about 02:50 UTC).
+    - cron: '12,42 * * * *'
+    - cron: '25 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -20,12 +26,11 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-env:
-  UPSTREAM_URL: https://codeberg.org/chric/rhygfuehl.git
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.aggregate.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,31 +42,35 @@ jobs:
 
       - name: Generate data with our aggregation
         id: aggregate
-        continue-on-error: true
         run: |
           pip install -r data/requirements.txt
+          set +e
           python data/aggregation.py
+          code=$?
+          set -e
+          if [ "$code" = "3" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::The weather data is incomplete right now (the source files are updated with a delay after midnight UTC). Nothing is published, the site keeps its current version."
+            exit 0
+          fi
+          if [ "$code" != "0" ]; then exit "$code"; fi
           echo "{\"timestamp\": \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\", \"version\": \"$(git rev-parse --short HEAD)-$(date -u +'%Y%m%d-%H%M')\"}" > data/data/metadata.json
 
-      # Fallback if our aggregation fails (e.g. API outage): use the data of the original.
-      - name: Fall back to data from upstream
-        if: steps.aggregate.outcome == 'failure'
-        run: |
-          echo "::warning::Own aggregation failed, using the data files of the original repo"
-          git fetch --depth=1 "$UPSTREAM_URL" main
-          git checkout FETCH_HEAD -- data/data
-
       - id: pages
+        if: steps.aggregate.outputs.skip != 'true'
         uses: actions/configure-pages@v5
 
-      - uses: actions/setup-node@v4
+      - if: steps.aggregate.outputs.skip != 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
 
-      - run: npm ci
+      - if: steps.aggregate.outputs.skip != 'true'
+        run: npm ci
 
       - name: Build
+        if: steps.aggregate.outputs.skip != 'true'
         run: npm run build
         env:
           SITE_URL: ${{ steps.pages.outputs.origin }}
@@ -69,16 +78,19 @@ jobs:
           PUBLIC_IS_CLONE: 'true'
 
       - name: Keep the clone out of search engines
+        if: steps.aggregate.outputs.skip != 'true'
         run: |
           printf 'User-agent: *\nDisallow: /\n' > dist/robots.txt
           rm -f dist/sitemap.xml dist/_redirects
 
-      - uses: actions/upload-pages-artifact@v3
+      - if: steps.aggregate.outputs.skip != 'true'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
     needs: build
+    if: needs.build.outputs.skip != 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

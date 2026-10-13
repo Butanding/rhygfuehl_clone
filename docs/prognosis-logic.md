@@ -64,7 +64,7 @@ https://data.geo.admin.ch/ch.meteoschweiz.ogd-smn/bas/ogd-smn_bas_h_historical_2
 
 **Time stamps.** MeteoSwiss labels every value with the **end of its hour (UTC)**: the row `08:00` is the rain, the mean radiation and the sunshine between 07:00 and 08:00. The code keeps this convention internally and converts to the **start** of the hour (`hourlyStarts`) for the charts.
 
-**Freshness.** The newest hour is typically available about 10 minutes after it ends. The recommendation is anchored at the newest hour that has a rain value; if that hour is older than 3 hours a warning is logged (feed late).
+**Freshness.** The newest hour is typically available about 10 minutes after it ends. The `recent` file is only completed with yesterday at about 02:48 UTC; until then the data has a hole of one day (see section 3). The recommendation is anchored at the newest hour that has a rain value; if that hour is older than 3 hours a warning is logged (feed late).
 
 **Why not the city's own rain sensors?** The "Smart Climate" network of the Basel-Stadt open data (dataset `100009`, rain station St. Johann `034001AF`) was used before. Those are raw, unvalidated readings of single low-cost sensors:
 
@@ -98,7 +98,8 @@ Every hour belongs to exactly one window, so no rain is counted twice.
 | a sunshine hour has no value | left out of **both** sides of the share $S$; no hour with possible sunshine: no share, the earlier radiation rule is used for the overcast decision |
 | hourly bars (3-day view) | a missing hour is drawn as 0 |
 | daily bars (week, month) | a day without data repeats the previous value; a warning is logged |
-| the download fails | the script aborts; the Pages build then falls back to the data files of the original repository |
+| more than `MAX_MISSING_HOURS` (3) hours are missing in the 72 h window of rain, radiation or sunshine | **nothing is calculated or published** (`aggregation.py` ends with exit code 3, the deploy workflow skips build and deployment, the site keeps its current version). Cause: MeteoSwiss updates the `recent` file only at about 02:48 UTC, so between 00:00 UTC and then the whole previous day is missing. A calculation on what is left would be wrong (see the decision history, 13 Oct 2026) |
+| the download fails | the script aborts and the run fails; the site keeps its current version |
 
 ---
 
@@ -300,6 +301,7 @@ All numbers come from the real test data (`tests/backend/fixtures/`).
 | 2026-10-12 | **Smooth decay** instead of three blocks | no jumps in the rating; calibration preserved. In 2026, 12 of about 290 days changed their water quality class (11 better, 1 worse) |
 | 2026-10-12 | **Radiation hourly** instead of daily | no delay of one day, same 72 hours as the rain |
 | 2026-10-12 | **Overcast rule on sunshine share** instead of radiation | see 4.3. Interim until the Cantonal Laboratory's data allows a calibration |
+| 2026-10-13 | **Data holes are no longer calculated** | the deploy at 01:43 UTC saw a day without data (12 Oct) because the MeteoSwiss `recent` file is only updated at about 02:48 UTC. The missing sunny day was ignored, three grey days remained: sunshine 6 %, "overcast", "Discouraged". The site showed that result until the next run, hours later. Now an incomplete window stops the calculation and the site keeps its last good version. The fallback to the data files of the original repository was removed: it used the old, faulty model |
 
 The 22 °C cap and the overcast rule were both justified with laboratory statements. The first was refuted by the laboratory itself, the second could not be verified by us.
 
@@ -315,7 +317,8 @@ The 22 °C cap and the overcast rule were both justified with laboratory stateme
 6. **No cloud cover.** MeteoSwiss does not publish a cloud cover for Basel-Binningen in these files. Sunshine duration is the closest measurement.
 7. **Possible sunshine is calculated**, not measured: about 4 % uncertainty, about 8 % in midwinter (low sun, horizon).
 8. **Swimmer safety ignores flow and water level.** Strong current is a real danger for swimmers; no thresholds are known to us.
-9. **Missing data counts as 0 mm of rain** (the less cautious choice) but as "no information" for radiation and sunshine. A long feed outage therefore lowers the rain impact. The feed delay warning (3 hours) is only logged.
+9. **The site is only as fresh as the last scheduled run.** The GitHub Pages workflow is set to run every 30 minutes, but GitHub delays and skips scheduled runs; on this repository there were gaps of several hours. The "Update" time in the tile shows how old the data is.
+10. **Missing data counts as 0 mm of rain** (the less cautious choice) but as "no information" for radiation and sunshine. A long feed outage therefore lowers the rain impact. The feed delay warning (3 hours) is only logged.
 
 ---
 
@@ -345,6 +348,8 @@ The 22 °C cap and the overcast rule were both justified with laboratory stateme
 | Bonus $B$ | > 1.0 and > 1.2; fallback overcast < 0.6 | `calculate_quality` |
 | Safety | 14 °C and 18 °C | `calculate_quality` |
 | `RAIN_STALE_AFTER` | 3 h | `aggregation.py` |
+| `MAX_MISSING_HOURS` | 3 h per series and 72 h window | `quality.py` |
+| `EXIT_INCOMPLETE` | exit code 3 | `aggregation.py` |
 
 ## Disclaimer
 This is an **automated estimate** based on environmental proxies. It is **not** a real-time biological measurement and **not** an official laboratory result. Swimming in the Rhine is always at your own risk. Local pollution events can occur unpredictably.

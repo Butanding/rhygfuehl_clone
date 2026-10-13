@@ -8,6 +8,7 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     RADIATION_COLUMN,
     RAIN_COLUMN,
     SUNSHINE_COLUMN,
+    MAX_MISSING_HOURS,
     WINDOW_HOURS,
     calculate_quality,
     daily_radiation_series,
@@ -15,6 +16,7 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     daily_rain_series,
     fill_gaps,
     hourly_series,
+    missing_hours,
     newest_hour,
     parse_hourly,
     radiation_mean,
@@ -33,6 +35,9 @@ AIR_STATION_ID = '034003A7'  # Rheinpromenade 2
 # "recent" = 1 Jan of this year until yesterday, "now" = today.
 METEOSWISS = 'https://data.geo.admin.ch/ch.meteoschweiz.ogd-smn/bas/ogd-smn_bas_h_'
 RAIN_STALE_AFTER = timedelta(hours=3)
+
+# Exit code: the weather data has a hole right now. The site keeps its current version (see the workflow).
+EXIT_INCOMPLETE = 3
 
 
 def updateJsonFile( path, data ):
@@ -173,6 +178,12 @@ def fetch_quality(waterData, now=None):
         raise SystemExit('no rain data available')
     if now - end > RAIN_STALE_AFTER:
         print(f'warning: newest rain value is from {end:%Y-%m-%d %H:%M} UTC, the feed seems to be late')
+    # A hole in the data (e.g. a whole day, right after midnight UTC) makes every result wrong: stop here.
+    holes = missing_hours([rain, radiation, sunshine], end)
+    if max(holes) > MAX_MISSING_HOURS:
+        print(f'weather data incomplete: missing hours in the 72 h window (rain, radiation, sunshine): {holes}. '
+              'The source files are updated with a delay; nothing is published now.')
+        raise SystemExit(EXIT_INCOMPLETE)
     # The recommendation is as fresh as the newest hour.
     last_update = end.strftime('%Y-%m-%dT%H:%M:%SZ')
 
