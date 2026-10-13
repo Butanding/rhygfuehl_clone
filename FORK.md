@@ -18,10 +18,15 @@ https://github.com/Butanding/rhygfuehl_clone/compare/upstream...main
 
 ## Automatisch
 
-- **Deploy to GitHub Pages:** bei jedem Push auf `main` und planmässig alle 30 Minuten (zu ruhigen
-  Minuten, GitHub lässt volle und halbe Stunden gern aus). Führt vorher `data/aggregation.py` aus und
-  holt die Messdaten damit direkt von MeteoSchweiz und data.bs.ch, die Test-Seite zeigt also die Wirkung
-  der eigenen Berechnung.
+- **Deploy to GitHub Pages:** bei jedem Push auf `main` und planmässig alle 5 Minuten (das ist das
+  Kürzeste, was GitHub erlaubt, zu ruhigen Minuten). Das Original macht dasselbe auf Codeberg alle
+  15 Minuten mit einem zuverlässigen CI-Zeitplan; der von GitHub ist nur nach bestem Bemühen und lässt
+  viele Läufe aus, darum der dichte Takt. Ein geplanter Lauf holt die Daten mit `data/aggregation.py`
+  (direkt von MeteoSchweiz und data.bs.ch) und vergleicht einen Fingerabdruck (die neuesten Zeitstempel)
+  mit dem, der neben der Seite liegt (`fingerprint.txt`). Gibt es nichts Neues, endet der Lauf nach
+  etwa einer halben Minute, ohne zu bauen. Nur neue Daten (oder ein Push) bauen und veröffentlichen.
+  Wie viele Läufe GitHub wirklich startet, entscheidet GitHub. Wer es genau braucht, löst den Workflow
+  von einem externen Zeitgeber (z. B. cron-job.org über die GitHub-Schnittstelle) aus.
   - Sind die Wetterdaten gerade lückenhaft (MeteoSchweiz ergänzt den Vortag erst gegen 02:50 UTC),
     wird nichts gebaut und nichts veröffentlicht: die Seite behält ihre letzte gute Version.
   - Schlägt die Aggregation anders fehl, schlägt der Lauf fehl, die Seite behält ihre letzte Version.

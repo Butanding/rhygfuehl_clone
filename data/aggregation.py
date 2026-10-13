@@ -13,6 +13,7 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     calculate_quality,
     daily_radiation_series,
     daily_sunshine_series,
+    data_fingerprint,
     daily_rain_series,
     fill_gaps,
     hourly_series,
@@ -282,9 +283,16 @@ def fetch_quality(waterData, now=None):
 
 def main():
     waterData = fetch_water()
-    fetch_air()
-    fetch_level()
-    fetch_quality(waterData)
+    airData = fetch_air()
+    levelData = fetch_level()
+    qualityData = fetch_quality(waterData)
+
+    # Changes whenever any of the data got a newer time stamp. The Pages workflow publishes it next
+    # to the site and skips a scheduled run if the published site already has the same fingerprint.
+    fingerprint = data_fingerprint(qualityData['lastUpdate'], waterData['lastUpdate'],
+                                   airData['lastUpdate'], levelData['lastUpdate'])
+    with open(os.path.join(DATA_DIR, 'fingerprint.txt'), 'w', encoding='utf-8') as f:
+        f.write(fingerprint)
 
 
 if __name__ == '__main__':

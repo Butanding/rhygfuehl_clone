@@ -317,7 +317,7 @@ The 22 °C cap and the overcast rule were both justified with laboratory stateme
 6. **No cloud cover.** MeteoSwiss does not publish a cloud cover for Basel-Binningen in these files. Sunshine duration is the closest measurement.
 7. **Possible sunshine is calculated**, not measured: about 4 % uncertainty, about 8 % in midwinter (low sun, horizon).
 8. **Swimmer safety ignores flow and water level.** Strong current is a real danger for swimmers; no thresholds are known to us.
-9. **The site is only as fresh as the last scheduled run.** The GitHub Pages workflow is set to run every 30 minutes, but GitHub delays and skips scheduled runs; on this repository there were gaps of several hours. The "Update" time in the tile shows how old the data is.
+9. **The site is only as fresh as the last scheduled run.** The original builds and deploys every 15 minutes with a reliable CI cron job on Codeberg. On GitHub the scheduler is best effort: it delays and skips many runs (with an interval of 30 minutes there were gaps of 3-7 hours here). The workflow is therefore asked every 5 minutes (the shortest interval GitHub allows) and ends right away if the published site already has the newest data (a fingerprint of the newest time stamps is published as `fingerprint.txt`). How many runs GitHub really starts is up to GitHub; an external trigger (e.g. cron-job.org calling the GitHub API) would make it exact. The "Update" time in the tile shows how old the data is.
 10. **Missing data counts as 0 mm of rain** (the less cautious choice) but as "no information" for radiation and sunshine. A long feed outage therefore lowers the rain impact. The feed delay warning (3 hours) is only logged.
 
 ---

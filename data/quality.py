@@ -345,3 +345,10 @@ def daily_sunshine_series(sunshine, end, days, min_hours=18):
     values = [min(100, round(100 * shone[d] / possible[d])) if count.get(d, 0) >= min_hours and possible[d] else None
               for d in dates]
     return values, [d.isoformat() for d in dates]
+
+
+# --- Change detection ---------------------------------------------------------
+
+def data_fingerprint(*last_updates):
+    """Short text that changes exactly when the data has a newer time stamp (used to skip pointless deployments)."""
+    return '|'.join('-' if v is None else str(v) for v in last_updates)

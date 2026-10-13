@@ -261,3 +261,6 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .astro
+
+# written by data/aggregation.py, only needed by the Pages workflow
+data/data/fingerprint.txt

@@ -9,6 +9,7 @@ from quality import (
     daily_radiation_series,
     daily_rain_series,
     daily_sunshine_series,
+    data_fingerprint,
     fill_gaps,
     MAX_MISSING_HOURS,
     hourly_series,
@@ -339,6 +340,16 @@ def test_single_missing_hours_are_tolerated():
     del rain[utc(2026, 10, 11, 13)]
     assert missing_hours([rain], utc(2026, 10, 12, 8)) == [2]
     assert 2 <= MAX_MISSING_HOURS
+
+
+# --- change detection ---------------------------------------------------------
+
+def test_data_fingerprint_changes_with_any_time_stamp():
+    base = data_fingerprint('2026-10-13T06:00:00Z', '2026-10-13T06:15:00+00:00', None, '2026-10-13T06:05:00Z')
+    assert base == data_fingerprint('2026-10-13T06:00:00Z', '2026-10-13T06:15:00+00:00', None, '2026-10-13T06:05:00Z')
+    assert base != data_fingerprint('2026-10-13T07:00:00Z', '2026-10-13T06:15:00+00:00', None, '2026-10-13T06:05:00Z')  # newer rain hour
+    assert base != data_fingerprint('2026-10-13T06:00:00Z', '2026-10-13T06:30:00+00:00', None, '2026-10-13T06:05:00Z')  # newer water value
+    assert '-' in base  # missing time stamps do not break it
 
 
 # --- helpers -----------------------------------------------------------------
