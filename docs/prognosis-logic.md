@@ -49,8 +49,8 @@ All three weather inputs come from the **same MeteoSwiss station and the same 72
 | Precipitation | MeteoSwiss, station Basel-Binningen (`BAS`) | `rre150h0`, precipitation, hourly total (mm) | hourly | rain impact $I$, windows $R_0..R_2$, rain chart |
 | Global radiation | MeteoSwiss, `BAS` | `gre000h0`, global radiation, hourly mean (W/m²) | hourly | radiation bonus $B$, radiation chart |
 | Sunshine duration | MeteoSwiss, `BAS` | `sre000h0`, sunshine duration, hourly total (minutes) | hourly | overcast rule (share $S$) |
-| Water temperature | Basel-Stadt open data, dataset `100046` | `rus_w_o_s3_te` | 15 min | Swimmer Safety Index |
-| Air temperature, water level | Basel-Stadt open data, datasets `100009` (station `034003A7`) and `100089` | | | display only, **not** part of the recommendation |
+| Water temperature | Basel-Stadt open data, dataset `100046`: Rhine monitoring station (RUES) **Weil am Rhein**, Rhine km 171.37 (47.601 N, 7.595 E), about 3.3 km downstream (north) of the Rheinpromenade | `rus_w_o_s3_te` | 15 min | Swimmer Safety Index |
+| Air temperature, water level | Basel-Stadt open data: air temperature dataset `100009`, measuring station **Rheinpromenade 2** (`034003A7`, 47.572 N, 7.584 E); water level dataset `100089`, measuring station **Kleinbasel** at the Birs confluence (FOEN station 2289) | | | display only, **not** part of the recommendation |
 
 MeteoSwiss files (open data, free to use with source attribution "MeteoSwiss"):
 
@@ -316,9 +316,10 @@ The 22 °C cap and the overcast rule were both justified with laboratory stateme
 5. **Binningen is about 5 km from the Rhine.** Showers can differ locally.
 6. **No cloud cover.** MeteoSwiss does not publish a cloud cover for Basel-Binningen in these files. Sunshine duration is the closest measurement.
 7. **Possible sunshine is calculated**, not measured: about 4 % uncertainty, about 8 % in midwinter (low sun, horizon).
-8. **Swimmer safety ignores flow and water level.** Strong current is a real danger for swimmers; no thresholds are known to us.
-9. **The site is only as fresh as the last scheduled run.** The original builds and deploys every 15 minutes with a reliable CI cron job on Codeberg. On GitHub the scheduler is best effort: it delays and skips many runs (with an interval of 30 minutes there were gaps of 3-7 hours here). The workflow is therefore asked every 5 minutes (the shortest interval GitHub allows) and ends right away if the published site already has the newest data (a fingerprint of the newest time stamps is published as `fingerprint.txt`). How many runs GitHub really starts is up to GitHub; an external trigger (e.g. cron-job.org calling the GitHub API) would make it exact. The "Update" time in the tile shows how old the data is.
-10. **Missing data counts as 0 mm of rain** (the less cautious choice) but as "no information" for radiation and sunshine. A long feed outage therefore lowers the rain impact. The feed delay warning (3 hours) is only logged.
+8. **The water temperature is not measured at the bathing spots** but at the Rhine monitoring station Weil am Rhein, about 3.3 km downstream (north) of the Rheinpromenade. It can differ slightly from the temperature in the city centre; the limits of 14 and 18 °C are coarse enough for that.
+9. **Swimmer safety ignores flow and water level.** Strong current is a real danger for swimmers; no thresholds are known to us.
+10. **The site is only as fresh as the last scheduled run.** The original builds and deploys every 15 minutes with a reliable CI cron job on Codeberg. On GitHub the scheduler is best effort: it delays and skips many runs (with an interval of 30 minutes there were gaps of 3-7 hours here). The workflow is therefore asked every 5 minutes (the shortest interval GitHub allows) and ends right away if the published site already has the newest data (a fingerprint of the newest time stamps is published as `fingerprint.txt`). How many runs GitHub really starts is up to GitHub; an external trigger (e.g. cron-job.org calling the GitHub API) would make it exact. The "Update" time in the tile shows how old the data is.
+11. **Missing data counts as 0 mm of rain** (the less cautious choice) but as "no information" for radiation and sunshine. A long feed outage therefore lowers the rain impact. The feed delay warning (3 hours) is only logged.
 
 ---
 

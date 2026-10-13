@@ -214,6 +214,8 @@ def fetch_quality(waterData, now=None):
             'quality': prognosis['quality'],
             'safety': prognosis['safety'],
         },
+        # Why the water quality is what it is: codes, the website turns them into sentences
+        'reasons': prognosis['reasons'],
         # What the recommendation was calculated from, for transparency and debugging
         'inputs': {
             'asOf': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -223,6 +225,7 @@ def fetch_quality(waterData, now=None):
             'radiationHoursMissing': rad_missing,
             'sunshineFraction': None if sun_share is None else round(sun_share, 3),
             'overcast': prognosis['overcast'],
+            'waterTempC': waterTempLatest,
         },
         'data': [],
     }

@@ -77,12 +77,23 @@ def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impac
     elif water_temp_latest >= 14.0:
         safety_index = 2
 
+    # Why the water quality is what it is (codes, the website writes the sentences)
+    if quality_index == 3:
+        reasons = ['dry' if rain_impact < 0.5 else 'sun']
+    elif quality_index == 2:
+        reasons = ['lightRain']
+    else:
+        reasons = [name for name, active in (('overcast', overcast),
+                                             ('rainHigh', rain_impact >= 5.0),
+                                             ('rainRecent', r0 >= 2.0)) if active] or ['rainModerate']
+
     # Final status is the bottleneck of both
     return {
         'level': min(quality_index, safety_index),
         'quality': quality_index,
         'safety': safety_index,
-        'overcast': overcast
+        'overcast': overcast,
+        'reasons': reasons
     }
 
 

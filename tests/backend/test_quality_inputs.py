@@ -352,6 +352,19 @@ def test_data_fingerprint_changes_with_any_time_stamp():
     assert '-' in base  # missing time stamps do not break it
 
 
+# --- reasons shown on the website ---------------------------------------------
+
+def test_reasons_explain_the_water_quality():
+    sunny = [250.0] * 72
+    assert calculate_quality([0, 0, 0], sunny, 20.0, rain_impact=0.0, sunshine_fraction=0.7)['reasons'] == ['dry']
+    assert calculate_quality([0.8, 0, 0], sunny, 20.0, rain_impact=0.8, sunshine_fraction=0.7)['reasons'] == ['sun']
+    assert calculate_quality([0.2, 1.0, 0], [100.0] * 72, 20.0, rain_impact=0.7, sunshine_fraction=0.7)['reasons'] == ['lightRain']
+    assert calculate_quality([0, 0, 0], sunny, 20.0, rain_impact=0.0, sunshine_fraction=0.1)['reasons'] == ['overcast']
+    assert calculate_quality([2.5, 0, 0], sunny, 20.0, rain_impact=2.5, sunshine_fraction=0.7)['reasons'] == ['rainRecent']
+    assert calculate_quality([6.0, 0, 0], sunny, 20.0, rain_impact=6.0, sunshine_fraction=0.1)['reasons'] == ['overcast', 'rainHigh', 'rainRecent']
+    assert calculate_quality([1.0, 3.0, 0], [100.0] * 72, 20.0, rain_impact=3.0, sunshine_fraction=0.7)['reasons'] in (['lightRain'], ['rainModerate'])
+
+
 # --- helpers -----------------------------------------------------------------
 
 def test_bucket_start_and_series():

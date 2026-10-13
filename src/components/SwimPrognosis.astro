@@ -10,13 +10,17 @@ interface Props {
 		quality: number;
 		safety: number;
 	};
+	/** what the calculation used (optional: data in the old format has none) */
+	inputs?: any;
+	/** codes why the water quality is what it is */
+	reasons?: string[];
 	lastUpdate: string;
 	updateLabel: string;
 	t: any;
 	data: any[];
 }
 
-const { quality, indices, lastUpdate, updateLabel, t, data } = Astro.props;
+const { quality, indices, inputs, reasons, lastUpdate, updateLabel, t, data } = Astro.props;
 
 const statusMap = {
 	3: {
@@ -54,6 +58,22 @@ const safetyIndexMap = {
 const status = statusMap[quality as keyof typeof statusMap] || statusMap[1];
 const qualityStatus = qualityIndexMap[indices?.quality as keyof typeof qualityIndexMap] || qualityIndexMap[1];
 const safetyStatus = safetyIndexMap[indices?.safety as keyof typeof safetyIndexMap] || safetyIndexMap[1];
+
+// Short explanations under the two indices
+const fill = (text: string, values: Record<string, string>) =>
+	Object.entries(values).reduce((s, [key, value]) => s.split(`%${key}%`).join(value), text);
+const reasonValues = {
+	i: inputs?.rainImpactMm != null ? inputs.rainImpactMm.toFixed(1) : '',
+	r0: inputs?.rainMm?.last24h != null ? inputs.rainMm.last24h.toFixed(1) : '',
+	s: inputs?.sunshineFraction != null ? String(Math.round(100 * inputs.sunshineFraction)) : ''
+};
+const qualityHint = (reasons ?? [])
+	.map(code => (code === 'overcast' && inputs?.sunshineFraction == null ? 'overcastRadiation' : code))
+	.map(code => t.reasons?.[code])
+	.filter(Boolean)
+	.map(text => fill(text, reasonValues))
+	.join(' ');
+const safetyHint = inputs?.waterTempC != null ? fill(t.safetyHint, { t: inputs.waterTempC.toFixed(1) }) : '';
 
 const radiationData = data.find(d => d.measure === 'globalRadiation');
 const rainData = data.find(d => d.measure === 'rain');
@@ -105,10 +125,12 @@ const sunshineText = radiationData?.sunshineLast72hPercent != null
 					<div class="bg-darkblue/5 dark:bg-white/5 p-4 rounded-xl space-y-1">
 						<div class="text-[10px] uppercase tracking-wider opacity-50 font-bold">{t.waterQualityIndex}</div>
 						<div class={`text-lg font-medium ${qualityStatus.color}`}>{qualityStatus.label}</div>
+						{qualityHint && <p class="text-xs opacity-70 leading-snug">{qualityHint}</p>}
 					</div>
 					<div class="bg-darkblue/5 dark:bg-white/5 p-4 rounded-xl space-y-1">
 						<div class="text-[10px] uppercase tracking-wider opacity-50 font-bold">{t.swimmerSafetyIndex}</div>
 						<div class={`text-lg font-medium ${safetyStatus.color}`}>{safetyStatus.label}</div>
+						{safetyHint && <p class="text-xs opacity-70 leading-snug">{safetyHint}</p>}
 					</div>
 				</div>
 
