@@ -22,6 +22,11 @@ on:
     # which GitHub delays and skips most often
     - cron: '3-59/5 * * * *'
   workflow_dispatch:
+    inputs:
+      only_if_new:
+        description: 'Publish only if the data is newer than the published site (used by keep-fresh.yml)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -64,7 +69,7 @@ jobs:
           if [ "$code" != "0" ]; then exit "$code"; fi
           echo "{\"timestamp\": \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\", \"version\": \"$(git rev-parse --short HEAD)-$(date -u +'%Y%m%d-%H%M')\"}" > data/data/metadata.json
 
-      # Nothing is published if the data has a hole, or (scheduled runs only) if the published
+      # Nothing is published if the data has a hole, or (scheduled runs and keep-fresh.yml only) if the published
       # site already has the newest data. A push or a manual run always publishes.
       - name: Decide whether to publish
         id: decide
@@ -73,7 +78,7 @@ jobs:
           if [ "${{ steps.aggregate.outputs.incomplete }}" = "true" ]; then
             skip=true
             echo "::notice::The weather data is incomplete right now (the source files are updated with a delay after midnight UTC). Nothing is published, the site keeps its current version."
-          elif [ "${{ github.event_name }}" = "schedule" ]; then
+          elif [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.only_if_new }}" = "true" ]; then
             new=$(cat data/data/fingerprint.txt)
             old=$(curl -fsS --max-time 20 "${{ steps.pages.outputs.base_url }}/fingerprint.txt?t=$(date +%s)" || true)
             echo "data fingerprint: new='$new' published='$old'"

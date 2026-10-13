@@ -91,10 +91,10 @@ const rainWindowsText = rainWindows
 		.replace('%r2%', mm(rainWindows.from48to72h))
 	: '';
 const radiationMeanText = radiationData?.meanLast72hWm2 != null
-	? t.radiationMean.replace('%v%', String(radiationData.meanLast72hWm2))
-	: '';
-const sunshineText = radiationData?.sunshineLast72hPercent != null
-	? t.sunshineMean.replace('%s%', String(radiationData.sunshineLast72hPercent))
+	? (radiationData?.sunshineLast72hPercent != null
+		? t.radiationMean.replace('%s%', String(radiationData.sunshineLast72hPercent))
+		: t.radiationMean.split(' · ')[0]
+	).replace('%v%', String(radiationData.meanLast72hWm2))
 	: '';
 ---
 
@@ -133,10 +133,6 @@ const sunshineText = radiationData?.sunshineLast72hPercent != null
 						{safetyHint && <p class="text-xs opacity-70 leading-snug">{safetyHint}</p>}
 					</div>
 				</div>
-
-				<p class="text-sm opacity-80 leading-relaxed">
-					{t.prognosisDescription}
-				</p>
 
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					{rainData && (
@@ -214,7 +210,6 @@ const sunshineText = radiationData?.sunshineLast72hPercent != null
 										]}
 									/>
 									{radiationMeanText && <p class="text-xs opacity-70 font-medium">{radiationMeanText}</p>}
-									{sunshineText && <p class="text-xs opacity-70 font-medium">{sunshineText}</p>}
 								</>
 							) : (
 								<>
@@ -235,14 +230,16 @@ const sunshineText = radiationData?.sunshineLast72hPercent != null
 					)}
 				</div>
 
-				<p class="text-xs opacity-60 leading-relaxed">{t.prognosisChartNote}</p>
-
 				<div class={`p-4 rounded-xl text-xs leading-normal border ${status.bg} border-current/10 opacity-90`}>
 					<div class="font-bold mb-1 uppercase tracking-tight flex items-center">
 						<Icon name="gavel" class="w-4 h-4 mr-1" />
-						Disclaimer
+						{t.prognosisBoxTitle}
 					</div>
-					{t.prognosisDisclaimer}
+					<p>{t.prognosisDisclaimer}</p>
+					<details class="mt-2">
+						<summary class="cursor-pointer opacity-70 hover:opacity-100">{t.prognosisBoxDetails}</summary>
+						<p class="mt-1 opacity-80 leading-relaxed">{t.prognosisChartNote}</p>
+					</details>
 				</div>
 
 				<div class="italic">

@@ -1,0 +1,45 @@
+# Keeps the site fresh without relying on GitHub's unreliable `schedule` trigger.
+#
+# This workflow chains itself: one run loops for about 5.5 hours, and every 5 minutes it starts
+# deploy-pages.yml with only_if_new=true (which builds and publishes only if there is newer
+# data). At the end it starts the next run of itself. Runs started with workflow_dispatch by the
+# built-in GITHUB_TOKEN are one of the few events that do trigger further workflows.
+#
+# Safety net: if the chain ever breaks (a failed or cancelled run), the schedule below restarts
+# it within 30 minutes at the latest. Only one run is active at a time; a second one waits
+# (the concurrency group keeps at most one waiting run).
+# Start it once by hand (Actions -> Keep fresh -> Run workflow) or just wait for the schedule.
+name: Keep fresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,37 * * * *'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: keep-fresh
+  cancel-in-progress: false
+
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Trigger the deploy every 5 minutes
+        run: |
+          end=$(( $(date +%s) + 330*60 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            gh workflow run deploy-pages.yml --ref main -f only_if_new=true || echo "::warning::dispatch failed"
+            sleep 300
+          done
+
+      - name: Start the next run of this workflow
+        if: always()
+        run: gh workflow run keep-fresh.yml --ref main

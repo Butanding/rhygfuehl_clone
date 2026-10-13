@@ -25,14 +25,21 @@ https://github.com/Butanding/rhygfuehl_clone/compare/upstream...main
   (direkt von MeteoSchweiz und data.bs.ch) und vergleicht einen Fingerabdruck (die neuesten Zeitstempel)
   mit dem, der neben der Seite liegt (`fingerprint.txt`). Gibt es nichts Neues, endet der Lauf nach
   etwa einer halben Minute, ohne zu bauen. Nur neue Daten (oder ein Push) bauen und veröffentlichen.
-  Wie viele Läufe GitHub wirklich startet, entscheidet GitHub. Wer es genau braucht, löst den Workflow
-  von einem externen Zeitgeber (z. B. cron-job.org über die GitHub-Schnittstelle) aus.
+  Wie viele Läufe GitHub wirklich startet, entscheidet GitHub; darum gibt es zusätzlich **Keep fresh**.
   - Sind die Wetterdaten gerade lückenhaft (MeteoSchweiz ergänzt den Vortag erst gegen 02:50 UTC),
     wird nichts gebaut und nichts veröffentlicht: die Seite behält ihre letzte gute Version.
   - Schlägt die Aggregation anders fehl, schlägt der Lauf fehl, die Seite behält ihre letzte Version.
     Einen Rückfall auf die Daten des Originals gibt es nicht mehr (es rechnet mit dem alten, fehlerhaften Modell).
   Die committeten `data/data/*.json` werden daher nicht von Hand angefasst, sonst gibt es
   Konflikte mit den Daten-Commits des Originals.
+- **Keep fresh:** verkettet sich selbst, ohne Abhängigkeit vom GitHub-Zeitplan. Ein Lauf dauert gut
+  5½ Stunden, startet in dieser Zeit alle 5 Minuten `Deploy to GitHub Pages` (mit `only_if_new=true`:
+  veröffentlicht nur bei neueren Daten) und startet am Ende den nächsten Lauf von sich selbst
+  (`workflow_dispatch` mit dem eingebauten Token löst als einer der wenigen Auslöser weitere Workflows aus).
+  Reisst die Kette (Fehler, Abbruch), startet der Zeitplan (alle 30 Minuten) sie wieder; es läuft nie
+  mehr als einer, ein zweiter wartet. Einmal von Hand starten: Actions → Keep fresh → Run workflow.
+  Abschalten: den Workflow in den Actions deaktivieren. Hinweis: Der Lauf ist dauernd aktiv; in
+  einem öffentlichen Repository kostet das nichts, in einem privaten zählt es zu den Freiminuten.
 - **Sync from upstream:** täglich. Aktualisiert `upstream` und merged es in `main`.
   Bei einem Merge-Konflikt schlägt der Job fehl (GitHub schickt eine Mail). Dann lokal:
   `git fetch origin && git checkout main && git merge origin/upstream`, Konflikte lösen, pushen.
