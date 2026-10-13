@@ -208,8 +208,9 @@ const radiationMeanText = radiationData?.meanLast72hWm2 != null
 												max: { hours: 60, days: 100 }
 											}] : [])
 										]}
-									/>
-									{radiationMeanText && <p class="text-xs opacity-70 font-medium">{radiationMeanText}</p>}
+									>
+										{radiationMeanText && <p class="text-xs opacity-70 font-medium">{radiationMeanText}</p>}
+									</BarChart>
 								</>
 							) : (
 								<>

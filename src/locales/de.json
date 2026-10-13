@@ -75,7 +75,7 @@
     "radiationName": "Strahlung",
     "sunshineName": "Sonnenschein",
     "sunshineUnitHour": "Min./h",
-    "radiationMean": "Ø 72 h: %v% W/m² · Sonnenschein %s % der möglichen Dauer (unter 20 % = bedeckt)",
+    "radiationMean": "Ø 72 h: %v% W/m² · Sonnenschein %s% % der möglichen Dauer (unter 20 % = bedeckt)",
     "prognosisChartNote": "Niederschlag und Strahlung: stündliche Messwerte der MeteoSchweiz-Station Basel-Binningen (Quelle: MeteoSchweiz). „3 Tage“ zeigt Stundenwerte, „Woche“ und „Monat“ Tageswerte (Niederschlag: Summe, Strahlung: Mittel über 24 Stunden inklusive Nacht; rund 300 W/m² und mehr entsprechen einem klaren Sommertag). Sonnenschein: Minuten mit Sonne pro Stunde, in „Woche“ und „Monat“ der Anteil an der möglichen Dauer pro Tag. Jüngerer Regen zählt für die Bewertung stärker als älterer.",
     "seo": {
         "title": "rhygfuehl - Aktuelle Rheintemperatur in Basel",

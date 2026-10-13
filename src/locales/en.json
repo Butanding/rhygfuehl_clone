@@ -75,7 +75,7 @@
     "radiationName": "Radiation",
     "sunshineName": "Sunshine",
     "sunshineUnitHour": "min/h",
-    "radiationMean": "Mean 72 h: %v% W/m² · sunshine %s % of the possible duration (below 20 % = overcast)",
+    "radiationMean": "Mean 72 h: %v% W/m² · sunshine %s% % of the possible duration (below 20 % = overcast)",
     "prognosisChartNote": "Precipitation and radiation: hourly measurements of the MeteoSwiss station Basel-Binningen (source: MeteoSwiss). “3 days” shows hourly values, “Week” and “Month” daily values (precipitation: total, radiation: 24-hour mean including the night; around 300 W/m² and more is a clear summer day). Sunshine: minutes of sun per hour, in “Week” and “Month” the share of the possible duration per day. More recent rain weighs more in the rating than older rain.",
     "seo": {
         "title": "rhygfuehl - current Rhine temperature in Basel",

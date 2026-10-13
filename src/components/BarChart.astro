@@ -82,8 +82,10 @@ const pill = 'px-3 py-1 text-xs rounded-full hover:opacity-80 transition-all fon
 		</div>
 	</div>
 
+	{metrics.length > 1 && <div class="mt-9 empty:hidden"><slot /></div>}
+
 	{metrics.length > 1 && (
-		<div class="flex gap-2 mt-9">
+		<div class="flex gap-2 mt-3">
 			{metrics.map((m, i) => (
 				<button
 					type="button"
