@@ -1,8 +1,12 @@
 {
-    "actualValue": 30.23,
-    "lastUpdate": "2025-07-18T12:48:42+00:00",
+    "actualValue": 15.97,
+    "lastUpdate": "2026-10-25T11:57:11+00:00",
     "chart": {
-        "week": [],
-        "month": []
+        "week": [
+            15.97
+        ],
+        "month": [
+            15.97
+        ]
     }
 }
