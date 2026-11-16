@@ -15,8 +15,50 @@ test.describe('Home Page', () => {
     const airTempHeader = page.getByRole('heading', { name: /Lufttemperatur/i });
     await expect(airTempHeader.first()).toBeVisible();
 
-    // const prognosisHeader = page.getByRole('heading', { name: /Bade-Empfehlung/i });
-    // await expect(prognosisHeader.first()).toBeVisible();
+    // The swim recommendation is an experiment tile: hidden by default
+    const prognosisHeader = page.getByRole('heading', { name: /Bade-Empfehlung/i });
+    await expect(prognosisHeader.first()).toBeHidden();
+  });
+
+  test('shows the swim recommendation only in experiment mode', async ({ page }) => {
+    const prognosisHeader = page.getByRole('heading', { name: /Bade-Empfehlung/i }).first();
+    await expect(page.locator('html')).toHaveAttribute('data-experiment', 'off');
+    await expect(prognosisHeader).toBeHidden();
+
+    await page.getByRole('button', { name: 'Beta', exact: true }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-experiment', 'on');
+    await expect(prognosisHeader).toBeVisible();
+
+    // the choice is kept
+    await page.reload();
+    await expect(prognosisHeader).toBeVisible();
+
+    await page.getByRole('button', { name: 'Aus', exact: true }).click();
+    await expect(prognosisHeader).toBeHidden();
+    await page.reload();
+    await expect(prognosisHeader).toBeHidden();
+  });
+
+  test('marks the swim recommendation as outdated when its data is old', async ({ page }) => {
+    await page.goto('/?experiment=on');
+    const tile = page.locator('.prognosis-tile');
+    const updated = Date.parse((await tile.getAttribute('data-last-update')) ?? '');
+    const badge = tile.getByText('Veraltet', { exact: true });
+
+    await page.clock.install({ time: new Date(updated + 2 * 3600 * 1000) });
+    await page.goto('/?experiment=on');
+    await expect(badge).toBeHidden();
+
+    await page.clock.setFixedTime(new Date(updated + 7 * 3600 * 1000));
+    await page.goto('/?experiment=on');
+    await expect(badge).toBeVisible();
+  });
+
+  test('experiment mode can be set with a link parameter', async ({ page }) => {
+    await page.goto('/?experiment=on');
+    await expect(page.getByRole('heading', { name: /Bade-Empfehlung/i }).first()).toBeVisible();
+    await page.goto('/?experiment=off');
+    await expect(page.getByRole('heading', { name: /Bade-Empfehlung/i }).first()).toBeHidden();
   });
 
   test('can expand and collapse metric details', async ({ page }) => {
@@ -37,6 +79,7 @@ test.describe('Home Page', () => {
 
   test('can switch to English translation', async ({ page }) => {
     // Look for link with exact href or text
+    await page.evaluate(() => localStorage.setItem('experiment', 'on'));  // the mode is kept across the language switch
     const enLink = page.locator('footer a[href="/en/"], nav a[href="/en/"], a[href="/en/"]').first();
     
     if (await enLink.isVisible()) {
@@ -46,8 +89,8 @@ test.describe('Home Page', () => {
       const waterTempHeaderEn = page.getByRole('heading', { name: /Water temperature/i });
       await expect(waterTempHeaderEn.first()).toBeVisible();
 
-      // const prognosisHeaderEn = page.getByRole('heading', { name: /Swimming Recommendation/i });
-      // await expect(prognosisHeaderEn.first()).toBeVisible();
+      const prognosisHeaderEn = page.getByRole('heading', { name: /Swimming Recommendation/i });
+      await expect(prognosisHeaderEn.first()).toBeVisible();
     }
   });
 

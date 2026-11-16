@@ -25,7 +25,9 @@ steps:
     image: python:3
     commands:
       - pip install -r ./data/requirements.txt
-      - python ./data/aggregation.py
+      # Exit code 3 = the inputs do not allow a recommendation right now (e.g. the nightly gap of the
+      # MeteoSwiss files): qualityData.json keeps its last version, the other data is updated as usual.
+      - python ./data/aggregation.py || [ $$? -eq 3 ]
       - SHORT_SHA=$$(git rev-parse --short HEAD)
       - TIMESTAMP=$$(date -u +'%Y%m%d-%H%M')
       - >
@@ -45,6 +47,8 @@ steps:
       - git config --global --add safe.directory '*'
       - git remote set-url origin https://chric:$CB_TOKEN@codeberg.org/$CI_REPO.git
       - git add data/data/*.json
+      # log of data source problems, written by data/health.py (only exists once there was one)
+      - "[ ! -f data/health-log.csv ] || git add data/health-log.csv"
       - git diff --quiet && git diff --staged --quiet || (git commit -m "cron data update [skip ci]" && git pull --rebase origin main && git push origin main)
     when:
       - event: cron

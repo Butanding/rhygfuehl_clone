@@ -1,6 +1,7 @@
 ---
 import Icon from './Icon.astro';
 import LineChart from './LineChart.astro';
+import BarChart from './BarChart.astro';
 import LocalTime from './LocalTime.astro';
 
 interface Props {
@@ -9,13 +10,17 @@ interface Props {
 		quality: number;
 		safety: number;
 	};
+	/** what the calculation used (optional: data in the old format has none) */
+	inputs?: any;
+	/** codes why the water quality is what it is */
+	reasons?: string[];
 	lastUpdate: string;
 	updateLabel: string;
 	t: any;
 	data: any[];
 }
 
-const { quality, indices, lastUpdate, updateLabel, t, data } = Astro.props;
+const { quality, indices, inputs, reasons, lastUpdate, updateLabel, t, data } = Astro.props;
 
 const statusMap = {
 	3: {
@@ -50,20 +55,61 @@ const safetyIndexMap = {
 	1: { label: t.safetyDiscouraged, color: 'text-red-600 dark:text-red-400' }
 };
 
+// The page is static: if the deployments stop (data source down, incomplete data), the last
+// version stays online. Past this age the browser marks the recommendation as outdated.
+// 6 h: every night the weather files have a hole until about 02:50 UTC, up to ~4 h without update.
+const STALE_AFTER_HOURS = 6;
+
 const status = statusMap[quality as keyof typeof statusMap] || statusMap[1];
 const qualityStatus = qualityIndexMap[indices?.quality as keyof typeof qualityIndexMap] || qualityIndexMap[1];
 const safetyStatus = safetyIndexMap[indices?.safety as keyof typeof safetyIndexMap] || safetyIndexMap[1];
 
+// Short explanations under the two indices
+const fill = (text: string, values: Record<string, string>) =>
+	Object.entries(values).reduce((s, [key, value]) => s.split(`%${key}%`).join(value), text);
+const reasonValues = {
+	i: inputs?.rainImpactMm != null ? inputs.rainImpactMm.toFixed(1) : '',
+	r0: inputs?.rainMm?.last24h != null ? inputs.rainMm.last24h.toFixed(1) : '',
+	s: inputs?.sunshineFraction != null ? String(Math.round(100 * inputs.sunshineFraction)) : ''
+};
+const qualityHint = (reasons ?? [])
+	.map(code => (code.startsWith('overcast') && inputs?.sunshineFraction == null ? `${code}Radiation` : code))
+	.map(code => t.reasons?.[code])
+	.filter(Boolean)
+	.map(text => fill(text, reasonValues))
+	.join(' ');
+const safetyHint = inputs?.waterTempC != null ? fill(t.safetyHint, { t: inputs.waterTempC.toFixed(1) }) : '';
+
 const radiationData = data.find(d => d.measure === 'globalRadiation');
 const rainData = data.find(d => d.measure === 'rain');
+const sunshineData = data.find(d => d.measure === 'sunshine');
+
+// Hourly bars. Data in the old format (daily values only) falls back to the line charts.
+const hourlyRain = rainData?.chart?.hourly as number[] | undefined;
+const hourlyRadiation = radiationData?.chart?.hourly as number[] | undefined;
+const rainWindows = rainData?.windowsMm;
+const mm = (v: number) => v.toFixed(1);
+const rainWindowsText = rainWindows
+	? t.rainWindows
+		.replace('%r0%', mm(rainWindows.last24h))
+		.replace('%r1%', mm(rainWindows.from24to48h))
+		.replace('%r2%', mm(rainWindows.from48to72h))
+	: '';
+const radiationMeanText = radiationData?.meanLast72hWm2 != null
+	? (radiationData?.sunshineLast72hPercent != null
+		? t.radiationMean.replace('%s%', String(radiationData.sunshineLast72hPercent))
+		: t.radiationMean.split(' · ')[0]
+	).replace('%v%', String(radiationData.meanLast72hWm2))
+	: '';
 ---
 
-<section class="bg-darkblue/5 dark:bg-white/5 rounded-2xl p-6 transition-all duration-200 hover:bg-darkblue/[0.08] dark:hover:bg-white/[0.08]">
+<section data-last-update={lastUpdate} data-stale-after-hours={STALE_AFTER_HOURS} class="prognosis-tile experiment-only bg-darkblue/5 dark:bg-white/5 rounded-2xl p-6 transition-all duration-200 hover:bg-darkblue/[0.08] dark:hover:bg-white/[0.08]">
 	<div class="metric-toggle flex items-center justify-between cursor-pointer select-none h-24">
 		<div class="flex-1 min-w-0">
 			<div class="flex items-center gap-2 mb-1">
 				<h2 class="text-lg font-medium opacity-80 truncate">{t.swimPrognosis}</h2>
 				<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-darkblue/10 dark:bg-white/10 opacity-50 tracking-wider">BETA</span>
+				<span class="prognosis-stale hidden text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-600 dark:text-red-400 tracking-wider uppercase">{t.prognosisStaleBadge}</span>
 			</div>
 			<div 
 				class={`text-3xl sm:text-4xl font-light flex items-center ${status.color}`}
@@ -81,50 +127,115 @@ const rainData = data.find(d => d.measure === 'rain');
 	<div class="collapse-grid">
 		<div class="collapse-inner">
 			<div class="mt-4 space-y-6">
+				<p class="prognosis-stale hidden p-3 rounded-xl text-xs font-medium bg-red-500/10 text-red-600 dark:text-red-400">
+					{t.prognosisStale}
+				</p>
 				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 					<div class="bg-darkblue/5 dark:bg-white/5 p-4 rounded-xl space-y-1">
 						<div class="text-[10px] uppercase tracking-wider opacity-50 font-bold">{t.waterQualityIndex}</div>
 						<div class={`text-lg font-medium ${qualityStatus.color}`}>{qualityStatus.label}</div>
+						{qualityHint && <p class="text-xs opacity-70 leading-snug">{qualityHint}</p>}
 					</div>
 					<div class="bg-darkblue/5 dark:bg-white/5 p-4 rounded-xl space-y-1">
 						<div class="text-[10px] uppercase tracking-wider opacity-50 font-bold">{t.swimmerSafetyIndex}</div>
 						<div class={`text-lg font-medium ${safetyStatus.color}`}>{safetyStatus.label}</div>
+						{safetyHint && <p class="text-xs opacity-70 leading-snug">{safetyHint}</p>}
 					</div>
 				</div>
-
-				<p class="text-sm opacity-80 leading-relaxed">
-					{t.prognosisDescription}
-				</p>
 
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					{rainData && (
 						<div class="space-y-2">
-							<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">Niederschlag (mm)</h3>
-							<LineChart 
-								id="rain-chart"
-								dataWeek={rainData.chart.week}
-								dataMonth={rainData.chart.month}
-								textWeek={t.week}
-								textMonth={t.month}
-								textToday={t.today}
-								lastUpdate=""
-								updateLabel=""
-							/>
+							{hourlyRain ? (
+								<>
+									<BarChart
+										id="rain-chart"
+										dateLocale={t.dateLocale}
+										textHours={t.threeDays}
+										textWeek={t.week}
+										textMonth={t.month}
+										metrics={[{
+											kind: 'rain',
+											name: t.rainName,
+											units: { hours: 'mm', week: 'mm', month: 'mm' },
+											hours: { values: hourlyRain, starts: rainData.chart.hourlyStarts },
+											week: { values: rainData.chart.week, dates: rainData.chart.weekDates },
+											month: { values: rainData.chart.month, dates: rainData.chart.monthDates },
+											textEnd: { hours: t.now, week: t.today, month: t.today },
+											suggestedMax: { hours: 2, days: 10 }
+										}]}
+									/>
+									{rainWindowsText && <p class="text-xs opacity-70 font-medium">{rainWindowsText}</p>}
+								</>
+							) : (
+								<>
+									<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">{t.rainChartTitle}</h3>
+									<LineChart 
+										id="rain-chart"
+										dataWeek={rainData.chart.week}
+										dataMonth={rainData.chart.month}
+										textWeek={t.week}
+										textMonth={t.month}
+										textToday={t.today}
+										lastUpdate=""
+										updateLabel=""
+									/>
+								</>
+							)}
 						</div>
 					)}
 					{radiationData && (
 						<div class="space-y-2">
-							<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">Strahlung (W/m²)</h3>
-							<LineChart 
-								id="radiation-chart"
-								dataWeek={radiationData.chart.week}
-								dataMonth={radiationData.chart.month}
-								textWeek={t.week}
-								textMonth={t.month}
-								textToday={t.today}
-								lastUpdate=""
-								updateLabel=""
-							/>
+							{hourlyRadiation ? (
+								<>
+									<BarChart
+										id="radiation-chart"
+										dateLocale={t.dateLocale}
+										textHours={t.threeDays}
+										textWeek={t.week}
+										textMonth={t.month}
+										metrics={[
+											{
+												kind: 'radiation',
+												name: t.radiationName,
+												units: { hours: 'W/m²', week: 'W/m²', month: 'W/m²' },
+												hours: { values: hourlyRadiation, starts: radiationData.chart.hourlyStarts },
+												week: { values: radiationData.chart.week, dates: radiationData.chart.weekDates },
+												month: { values: radiationData.chart.month, dates: radiationData.chart.monthDates },
+												textEnd: { hours: t.now, week: t.yesterday, month: t.yesterday },
+												suggestedMax: { hours: 300, days: 200 }
+											},
+											...(sunshineData?.chart?.hourly ? [{
+												kind: 'sunshine',
+												name: t.sunshineName,
+												units: { hours: t.sunshineUnitHour, week: '%', month: '%' },
+												hours: { values: sunshineData.chart.hourly, starts: sunshineData.chart.hourlyStarts },
+												week: { values: sunshineData.chart.week, dates: sunshineData.chart.weekDates },
+												month: { values: sunshineData.chart.month, dates: sunshineData.chart.monthDates },
+												textEnd: { hours: t.now, week: t.yesterday, month: t.yesterday },
+												suggestedMax: { hours: 60, days: 100 },
+												max: { hours: 60, days: 100 }
+											}] : [])
+										]}
+									>
+										{radiationMeanText && <p class="text-xs opacity-70 font-medium">{radiationMeanText}</p>}
+									</BarChart>
+								</>
+							) : (
+								<>
+									<h3 class="text-xs uppercase tracking-wider opacity-50 font-bold">{t.radiationChartTitle}</h3>
+									<LineChart 
+										id="radiation-chart"
+										dataWeek={radiationData.chart.week}
+										dataMonth={radiationData.chart.month}
+										textWeek={t.week}
+										textMonth={t.month}
+										textToday={t.yesterday}
+										lastUpdate=""
+										updateLabel=""
+									/>
+								</>
+							)}
 						</div>
 					)}
 				</div>
@@ -132,9 +243,13 @@ const rainData = data.find(d => d.measure === 'rain');
 				<div class={`p-4 rounded-xl text-xs leading-normal border ${status.bg} border-current/10 opacity-90`}>
 					<div class="font-bold mb-1 uppercase tracking-tight flex items-center">
 						<Icon name="gavel" class="w-4 h-4 mr-1" />
-						Disclaimer
+						{t.prognosisBoxTitle}
 					</div>
-					{t.prognosisDisclaimer}
+					<p>{t.prognosisDisclaimer}</p>
+					<details class="mt-2">
+						<summary class="cursor-pointer opacity-70 hover:opacity-100">{t.prognosisBoxDetails}</summary>
+						<p class="mt-1 opacity-80 leading-relaxed">{t.prognosisChartNote}</p>
+					</details>
 				</div>
 
 				<div class="italic">
@@ -144,3 +259,18 @@ const rainData = data.find(d => d.measure === 'rain');
 		</div>
 	</div>
 </section>
+
+<script>
+	// Mark the recommendation as outdated if its data is too old (checked in the browser, see above)
+	function markStalePrognosis() {
+		document.querySelectorAll<HTMLElement>('.prognosis-tile').forEach(tile => {
+			const updated = Date.parse(tile.dataset.lastUpdate ?? '');
+			const limit = Number(tile.dataset.staleAfterHours) * 3600 * 1000;
+			const stale = !Number.isFinite(updated) || Date.now() - updated > limit;
+			tile.querySelectorAll('.prognosis-stale').forEach(el => el.classList.toggle('hidden', !stale));
+		});
+	}
+	markStalePrognosis();
+	document.addEventListener('astro:page-load', markStalePrognosis);
+	document.addEventListener('visibilitychange', () => { if (!document.hidden) markStalePrognosis(); });
+</script>

@@ -261,3 +261,6 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .astro
+
+# written by data/aggregation.py: changes when the data has a newer time stamp (lets a CI skip pointless deployments)
+data/data/fingerprint.txt

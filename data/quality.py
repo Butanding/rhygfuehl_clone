@@ -1,0 +1,393 @@
+"""Pure calculation helpers for the swim recommendation.
+
+No network access and no file I/O in here, so everything can be unit tested
+with fixed example data (see tests/backend/).
+"""
+import csv
+import io
+import math
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+LOCAL_TZ = ZoneInfo('Europe/Zurich')
+
+RAD_THRESHOLD = 170  # W/m², reference for a sunny day (mean over 24h, night included)
+
+# The recommendation looks at the last three days
+WINDOW_HOURS = 72
+
+# "Overcast" = less than this share of the possible sunshine duration of the last 72 hours.
+# Interim rule, see docs/prognosis-logic.md. 20 % is about as strict in summer as the earlier
+# rule "72 h mean radiation < 102 W/m²" (1-3 % of the days in June-August), but it does not
+# depend on the season.
+OVERCAST_SUNSHINE = 0.20
+
+# Rain impact (mm) below which the last 72 hours count as dry
+DRY_IMPACT = 0.5
+
+
+def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impact=None, sunshine_fraction=None):
+    """Compute the swim recommendation.
+
+    rain_week: [R0, R1, R2] = rain of the last 24h, 24-48h ago, 48-72h ago (mm)
+    global_radiation: radiation values (W/m²) of the last three days, any
+        resolution (hourly values or daily means). None entries are ignored.
+    rain_impact: weighted rain impact I in mm. If omitted it is computed from the
+        three windows with the weights 1 / 0.5 / 0.25 (see rain_impact()).
+    sunshine_fraction: share (0-1) of the possible sunshine duration of the last 72 hours.
+        Decides whether the sky counts as overcast. If None (no data), the earlier rule on
+        the mean radiation is used instead.
+    """
+    r0 = rain_week[0] if len(rain_week) > 0 else 0
+    r1 = rain_week[1] if len(rain_week) > 1 else 0
+    r2 = rain_week[2] if len(rain_week) > 2 else 0
+    if rain_impact is None:
+        rain_impact = (r0 * 1.0) + (r1 * 0.5) + (r2 * 0.25)
+
+    # Mean over the values we actually have; without any radiation data the
+    # bonus is 0, which is the conservative choice (overcast penalty applies).
+    rad_values = [v for v in global_radiation if v is not None]
+    rad_bonus = sum(rad_values) / (len(rad_values) * RAD_THRESHOLD) if rad_values else 0
+
+    # 1. Water Quality Index (Microbiological)
+    # Default is discouraged
+    quality_index = 1
+
+    # Excellent (Level 3)
+    if rain_impact < DRY_IMPACT or (r0 < 1.0 and rain_impact < 2.0 and rad_bonus > 1.2):
+        quality_index = 3
+    # Good (Level 2)
+    elif (rain_impact < 3.5 and r0 < 1.5) or (r0 < 1.5 and rain_impact < 5.0 and rad_bonus > 1.0):
+        quality_index = 2
+
+    # Hard Scientific Caps (Safety First)
+    # Overcast Penalty: little sun disinfects less, even without rain
+    if sunshine_fraction is not None:
+        overcast = sunshine_fraction < OVERCAST_SUNSHINE
+    else:
+        overcast = rad_bonus < 0.6  # fallback: mean radiation < 0.6 x 170 W/m²
+    # Dry and overcast: no new germs wash in, they only die off more slowly -> "good" at best.
+    # Overcast after rain: discouraged, as before.
+    dry = rain_impact < DRY_IMPACT
+    if overcast:
+        quality_index = min(quality_index, 2 if dry else 1)
+    if rain_impact >= 5.0: # Extreme Rain Impact
+        quality_index = min(quality_index, 1)
+    if r0 >= 2.0: # Immediate Active Runoff (even if bonus is high, surface disinfection isn't enough)
+        quality_index = min(quality_index, 1)
+
+    # 2. Swimmer Safety Index (Physical)
+    safety_index = 1
+    if water_temp_latest >= 18.0:
+        safety_index = 3
+    elif water_temp_latest >= 14.0:
+        safety_index = 2
+
+    # Why the water quality is what it is (codes, the website writes the sentences)
+    if quality_index == 3:
+        reasons = ['dry' if dry else 'sun']
+    elif quality_index == 2:
+        reasons = ['overcastDry' if overcast and dry else 'lightRain']
+    else:
+        reasons = [name for name, active in (('overcast', overcast),
+                                             ('rainHigh', rain_impact >= 5.0),
+                                             ('rainRecent', r0 >= 2.0)) if active] or ['rainModerate']
+
+    # Final status is the bottleneck of both
+    return {
+        'level': min(quality_index, safety_index),
+        'quality': quality_index,
+        'safety': safety_index,
+        'overcast': overcast,
+        'reasons': reasons
+    }
+
+
+def bucket_start(range_value):
+    """Start of an Opendatasoft range bucket, e.g. '[2026-10-08T12:00:00.000Z, 2026-10-09T00:00:00.000Z['."""
+    if not isinstance(range_value, str) or ',' not in range_value:
+        return None
+    return range_value.lstrip('[(').split(',')[0].strip()
+
+
+def fill_gaps(values):
+    """Replace None by the previous value (0 at the start). Returns (filled, number_of_gaps)."""
+    filled, last, gaps = [], 0, 0
+    for v in values:
+        if v is None:
+            gaps += 1
+            v = last
+        filled.append(v)
+        last = v
+    return filled, gaps
+
+
+def series_from_records(records, field):
+    """Aggregated API records -> (values, bucket start times), gaps filled with the previous value."""
+    values, times = [], []
+    for e in records:
+        fields = e['record']['fields']
+        values.append(fields.get(field))
+        times.append(bucket_start(fields.get('time')))
+    filled, _ = fill_gaps(values)
+    return filled, times
+
+
+# --- MeteoSwiss hourly data -------------------------------------------------
+# Source: MeteoSwiss open data, station Basel-Binningen, hourly values:
+#   rre150h0  precipitation, hourly total (mm)
+#   gre000h0  global radiation, hourly mean (W/m²)
+# The timestamp of a value is the END of its hour (UTC): the row "08:00" is the
+# rain that fell / the mean radiation between 07:00 and 08:00.
+#
+# The city's own "Smart Climate" sensors (St. Johann) were used for the rain
+# before. Those are raw, unvalidated readings: on 11 Oct 2026 the station
+# reported 9.4 mm (the maximum of ~80 stations, median 0.0, Binningen 0.0) and
+# on 8 Oct only 5.4 mm where Binningen measured 28.6 mm.
+
+RAIN_COLUMN = 'rre150h0'
+RADIATION_COLUMN = 'gre000h0'
+SUNSHINE_COLUMN = 'sre000h0'  # sunshine duration, minutes per hour
+
+
+def parse_hourly(csv_text, column):
+    """MeteoSwiss OGD hourly CSV -> {end of hour (UTC datetime): value or None}."""
+    values = {}
+    for row in csv.DictReader(io.StringIO(csv_text), delimiter=';'):
+        end = datetime.strptime(row['reference_timestamp'], '%d.%m.%Y %H:%M').replace(tzinfo=timezone.utc)
+        raw = (row.get(column) or '').strip()
+        values[end] = float(raw) if raw not in ('', '-') else None
+    return values
+
+
+def newest_hour(hourly):
+    """End of the newest hour that has a value, or None."""
+    return max((t for t, v in hourly.items() if v is not None), default=None)
+
+
+def hourly_series(hourly, end, hours):
+    """The `hours` hours up to and including the hour ending at `end`, oldest first.
+
+    Returns (values, starts): the value per hour (None = missing) and the ISO
+    start time (UTC) of each hour.
+    """
+    ends = [end - timedelta(hours=i) for i in range(hours - 1, -1, -1)]
+    values = [hourly.get(e) for e in ends]
+    starts = [(e - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ') for e in ends]
+    return values, starts
+
+
+# More missing hours than this in the 72 h window and the data is not used: the source files are
+# updated with a delay (the "recent" file only after about 02:48 UTC), so right after midnight UTC a
+# whole day can be missing, and a calculation on what is left would be wrong.
+MAX_MISSING_HOURS = 3
+
+
+def missing_hours(series, end, hours=WINDOW_HOURS):
+    """Number of missing hours in the window of each series (a list of {hour end: value} dicts)."""
+    return [hourly_series(hourly, end, hours)[0].count(None) for hourly in series]
+
+
+def local_day(hour_end):
+    """Swiss calendar day an hour (given by its end) belongs to."""
+    return (hour_end - timedelta(hours=1)).astimezone(LOCAL_TZ).date()
+
+
+# --- Rain -------------------------------------------------------------------
+
+def rain_windows(rain, end):
+    """[R0, R1, R2] with the number of missing hours of each window.
+
+    R0 = rain of the 24 hours up to `end`, R1 = the 24 hours before that,
+    R2 = the 24 hours before that. Windows do not overlap. Missing hours count
+    as 0 mm. Returns (sums, missing_hours).
+    """
+    sums, missing = [], []
+    for i in range(3):
+        values, _ = hourly_series(rain, end - timedelta(hours=24 * i), 24)
+        sums.append(round(sum(v for v in values if v is not None), 1))
+        missing.append(values.count(None))
+    return sums, missing
+
+
+# Rain loses its influence smoothly: the weight halves every 24 hours (washout
+# and die-off are roughly exponential) and fades to 0 over the last 12 hours of
+# the three-day window, so nothing jumps when an hour leaves the window. The
+# constant 11.5 h makes steady rain count like the former block weights
+# 1 / 0.5 / 0.25 for 0-24h / 24-48h / 48-72h, so the thresholds stay valid.
+RAIN_HALF_LIFE_H = 24
+RAIN_TAPER_H = 12
+_RAIN_SCALE_SHIFT_H = 11.5
+
+
+def rain_weight(age_hours):
+    """Weight of rain that fell `age_hours` ago (measured to the middle of its hour)."""
+    if age_hours >= WINDOW_HOURS:
+        return 0.0
+    weight = 2 ** (-(age_hours - _RAIN_SCALE_SHIFT_H) / RAIN_HALF_LIFE_H)
+    if age_hours > WINDOW_HOURS - RAIN_TAPER_H:
+        weight *= (WINDOW_HOURS - age_hours) / RAIN_TAPER_H
+    return weight
+
+
+def rain_impact(rain, end):
+    """Rain impact I in mm: every hour of the last 72 hours weighted by its age."""
+    total = 0.0
+    for i in range(WINDOW_HOURS):
+        value = rain.get(end - timedelta(hours=i))
+        if value:
+            total += value * rain_weight(i + 0.5)
+    return round(total, 2)
+
+
+def daily_rain_series(rain, end, days):
+    """Rain per Swiss calendar day, oldest first: (values, ISO dates).
+
+    The last day is today so far (up to the hour ending at `end`). None if no
+    hour of a day has a value.
+    """
+    last_day = local_day(end)
+    totals = {}
+    for t, v in rain.items():
+        if v is None or t > end:
+            continue
+        totals[local_day(t)] = totals.get(local_day(t), 0) + v
+    dates = [last_day - timedelta(days=i) for i in range(days - 1, -1, -1)]
+    values = [round(totals[d], 1) if d in totals else None for d in dates]
+    return values, [d.isoformat() for d in dates]
+
+
+# --- Global radiation -------------------------------------------------------
+
+def radiation_mean(radiation, end, hours=WINDOW_HOURS):
+    """Mean radiation (W/m²) of the last `hours` hours, night included, and the number of missing hours.
+
+    Windows end at the same hour as the rain windows. None if there is no value at all.
+    """
+    values, _ = hourly_series(radiation, end, hours)
+    present = [v for v in values if v is not None]
+    mean = sum(present) / len(present) if present else None
+    return mean, values.count(None)
+
+
+def daily_radiation_series(radiation, end, days, min_hours=18):
+    """Mean radiation per complete Swiss calendar day, oldest first: (values, ISO dates).
+
+    Today is left out: a mean over the daylight hours so far is not comparable with
+    the mean over 24 hours. None if fewer than `min_hours` hours of a day are known.
+    """
+    today = local_day(end)
+    per_day = {}
+    for t, v in radiation.items():
+        if v is None or t > end:
+            continue
+        per_day.setdefault(local_day(t), []).append(v)
+    dates = [today - timedelta(days=i) for i in range(days, 0, -1)]
+    values = [round(sum(per_day[d]) / len(per_day[d])) if len(per_day.get(d, [])) >= min_hours else None
+              for d in dates]
+    return values, [d.isoformat() for d in dates]
+
+
+# --- Sunshine duration ------------------------------------------------------
+# "Overcast" is judged by the sunshine duration relative to what is astronomically
+# possible. That share does not depend on the season, unlike the radiation in W/m²,
+# which stays below any fixed threshold on clear winter days.
+
+STATION_LAT = 47.5408  # Basel-Binningen
+STATION_LON = 7.5835
+# Sun counts as possible above this elevation. WMO sunshine needs a direct beam of 120 W/m²,
+# which a low sun does not deliver. 5° reproduces the "possible" minutes behind MeteoSwiss'
+# relative sunshine duration (sremaxdv) within about 4 % (about 8 % in midwinter).
+SUN_MIN_ELEVATION_DEG = 5
+
+
+def sun_elevation(when_utc):
+    """Elevation of the sun above the horizon in degrees at Basel-Binningen (NOAA approximation)."""
+    year_fraction = 2 * math.pi / 365 * (when_utc.timetuple().tm_yday - 1 + (when_utc.hour - 12) / 24)
+    equation_of_time = 229.18 * (0.000075 + 0.001868 * math.cos(year_fraction) - 0.032077 * math.sin(year_fraction)
+                                 - 0.014615 * math.cos(2 * year_fraction) - 0.040849 * math.sin(2 * year_fraction))
+    declination = (0.006918 - 0.399912 * math.cos(year_fraction) + 0.070257 * math.sin(year_fraction)
+                   - 0.006758 * math.cos(2 * year_fraction) + 0.000907 * math.sin(2 * year_fraction)
+                   - 0.002697 * math.cos(3 * year_fraction) + 0.00148 * math.sin(3 * year_fraction))
+    minutes = when_utc.hour * 60 + when_utc.minute + when_utc.second / 60
+    solar_time = (minutes + equation_of_time + 4 * STATION_LON) % 1440
+    hour_angle = math.radians(solar_time / 4 - 180)
+    latitude = math.radians(STATION_LAT)
+    sin_elevation = (math.sin(latitude) * math.sin(declination)
+                     + math.cos(latitude) * math.cos(declination) * math.cos(hour_angle))
+    return math.degrees(math.asin(max(-1.0, min(1.0, sin_elevation))))
+
+
+def possible_sunshine_minutes(hour_end):
+    """Minutes of the hour ending at `hour_end` (UTC) in which the sun is high enough to shine."""
+    start = hour_end - timedelta(hours=1)
+    return sum(1 for m in range(60)
+               if sun_elevation(start + timedelta(minutes=m, seconds=30)) > SUN_MIN_ELEVATION_DEG)
+
+
+def sunshine_fraction(sunshine, end, hours=WINDOW_HOURS):
+    """Share (0-1) of the possible sunshine duration of the last `hours` hours, and the number of missing hours.
+
+    Hours without a sunshine value are left out of both sides of the fraction. None if there is no
+    hour with possible sunshine and a value.
+    """
+    values, _ = hourly_series(sunshine, end, hours)
+    ends = [end - timedelta(hours=i) for i in range(hours - 1, -1, -1)]
+    shone = possible = 0
+    for hour_end, minutes in zip(ends, values):
+        if minutes is None:
+            continue
+        shone += minutes
+        possible += possible_sunshine_minutes(hour_end)
+    fraction = min(1.0, shone / possible) if possible else None
+    return fraction, values.count(None)
+
+
+def daily_sunshine_series(sunshine, end, days, min_hours=18):
+    """Sunshine share (percent of the possible duration) per complete Swiss calendar day, oldest first.
+
+    Like the daily radiation, today is left out. None if fewer than `min_hours` hours of a day have a value.
+    """
+    today = local_day(end)
+    dates = [today - timedelta(days=i) for i in range(days, 0, -1)]
+    wanted = set(dates)
+    shone, possible, count = {}, {}, {}
+    for t, v in sunshine.items():
+        day = local_day(t)
+        if v is None or t > end or day not in wanted:
+            continue
+        shone[day] = shone.get(day, 0) + v
+        possible[day] = possible.get(day, 0) + possible_sunshine_minutes(t)
+        count[day] = count.get(day, 0) + 1
+    values = [min(100, round(100 * shone[d] / possible[d])) if count.get(d, 0) >= min_hours and possible[d] else None
+              for d in dates]
+    return values, [d.isoformat() for d in dates]
+
+
+# --- Freshness of the inputs --------------------------------------------------
+
+def newest_valid(records, value_field, time_field):
+    """(value, time stamp) of the first record (newest first) that has a value, or (None, None)."""
+    for record in records:
+        fields = record['record']['fields']
+        if fields.get(value_field) is not None and fields.get(time_field):
+            return fields[value_field], fields[time_field]
+    return None, None
+
+
+def age(timestamp, now):
+    """Age of an ISO time stamp (or datetime) as timedelta; None if there is none."""
+    if timestamp is None:
+        return None
+    if isinstance(timestamp, str):
+        timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return now - timestamp
+
+
+# --- Change detection ---------------------------------------------------------
+
+def data_fingerprint(*last_updates):
+    """Short text that changes exactly when the data has a newer time stamp (used to skip pointless deployments)."""
+    return '|'.join('-' if v is None else str(v) for v in last_updates)
