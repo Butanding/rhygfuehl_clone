@@ -93,12 +93,16 @@ Every hour belongs to exactly one window, so no rain is counted twice.
 
 | Situation | Behaviour |
 | :--- | :--- |
-| a rain hour has no value | counts as 0 mm, a warning with the number of missing hours per window is logged |
+| a rain hour of the **last 24 hours** has no value | **nothing is calculated or published** (exit code 3, see below): counting it as 0 mm could hide the very rain that matters |
+| an older rain hour (24-72 h ago) has no value | counts as 0 mm, a warning with the number of missing hours per window is logged |
 | a radiation hour has no value | left out of the mean; no value at all: $B = 0$ (conservative) |
 | a sunshine hour has no value | left out of **both** sides of the share $S$; no hour with possible sunshine: no share, the earlier radiation rule is used for the overcast decision |
 | hourly bars (3-day view) | a missing hour is drawn as 0 |
 | daily bars (week, month) | a day without data repeats the previous value; a warning is logged |
 | more than `MAX_MISSING_HOURS` (3) hours are missing in the 72 h window of rain, radiation or sunshine | **nothing is calculated or published** (`aggregation.py` ends with exit code 3, the deploy workflow skips build and deployment, the site keeps its current version). Cause: MeteoSwiss updates the `recent` file only at about 02:48 UTC, so between 00:00 UTC and then the whole previous day is missing. A calculation on what is left would be wrong (see the decision history, 13 Oct 2026) |
+| the newest rain value is older than `RAIN_STALE_AFTER` (3 h) | **nothing is calculated or published** (exit code 3): it may have rained since |
+| no water temperature in the newest 50 records, or the newest value is older than `WATER_STALE_AFTER` (6 h) | **nothing is calculated or published** (exit code 3). Before 16 Nov 2026 a missing value was replaced by 0 °C, which read "discouraged" |
+| the published version is older than 6 hours (for any of the reasons above, or because the deployments stopped) | the page itself (script in `SwimPrognosis.astro`) shows a badge "Outdated" and a warning in the tile. 6 h because the nightly hole of the MeteoSwiss files already causes up to about 4 h without an update |
 | the download fails | the script aborts and the run fails; the site keeps its current version |
 
 ---
@@ -114,7 +118,7 @@ $$I = \sum_{h} \text{rain}_h \cdot w(a_h), \qquad w(a) = 2^{-(a - 11.5\,\text{h}
 - $a_h$ is the age of the **middle** of the hour, in hours (the newest hour has $a = 0.5$).
 - The weight **halves every 24 hours** (half-life `RAIN_HALF_LIFE_H = 24`).
 - `taper(a)` fades the weight linearly to 0 over the last 12 hours of the window ($a$ from 60 to 72 h), so nothing drops out of the window abruptly. Beyond 72 hours the weight is 0.
-- The constant 11.5 h calibrates the curve: steady rain counts like the **former block weights** 1 / 0.5 / 0.25 for the windows 0-24 h / 24-48 h / 48-72 h. Average weights of the smooth curve: **1.005 / 0.503 / 0.202**. All thresholds below were set for the block weights and stay valid.
+- The constant 11.5 h calibrates the curve: steady rain counts like the **former block weights** 1 / 0.5 / 0.25 for the windows 0-24 h / 24-48 h / 48-72 h. Average weights of the smooth curve: **1.005 / 0.503 / 0.202**. All thresholds below were set for the block weights and stay valid. The equivalence holds on average only: rain of the last hour weighs **1.37**, rain 24 h ago 0.70, 48 h ago 0.35. Compared with the blocks the rating is milder on 1-6 % of the hours of a month and stricter on under 2 % (2026).
 
 | Age | 0.5 h | 12.5 h | 24.5 h | 48.5 h | 66.5 h | 72 h |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -142,7 +146,9 @@ The Cantonal Laboratory reports that overcast days are bad for the water quality
 
 $$S = \frac{\sum_h \text{sunshine}_h}{\sum_h \text{possible}_h}$$
 
-Overcast if **$S < 20\ \%$** (`OVERCAST_SUNSHINE = 0.20`). Then the water quality is capped at level 1 (see 4.4).
+Overcast if **$S < 20\ \%$** (`OVERCAST_SUNSHINE = 0.20`). Then the water quality is capped (see 4.4): at level 1 after rain, at level 2 if the last 72 hours were dry ($I < 0.5$, `DRY_IMPACT`).
+
+**Why dry and overcast is only "good", not "discouraged" (since 16 Nov 2026).** Without rain no new germs are washed in from the sewer overflows; a grey sky only slows down their die-off. Capping at level 1 meant "discouraged" on 37 % of the hours of 1-11 Nov 2026 without a drop of rain in 72 hours (April: 12 % of the hours discouraged by this rule alone). The laboratory statement behind the rule could not be verified (see section 9).
 
 **Possible sunshine** is calculated astronomically for Basel-Binningen (47.5408° N, 7.5835° E): for every minute of every hour the elevation of the sun is calculated (NOAA approximation of declination and equation of time). A minute counts as possible if the sun stands **higher than 5°**. A low sun does not deliver the direct beam of 120 W/m² that defines "sunshine" (WMO), and MeteoSwiss itself relates its relative sunshine duration to such a maximum. The value 5° reproduces the "possible" minutes behind MeteoSwiss' daily relative sunshine duration (`sremaxdv`) within about 4 %, in midwinter about 8 %.
 
@@ -171,11 +177,12 @@ Start with level 1 (discouraged), then:
 | **2** | Good | ($I < 3.5$ and $R_0 < 1.5$) **or** ($R_0 < 1.5$ and $I < 5.0$ and $B > 1.0$) |
 | **1** | Discouraged | otherwise |
 
-Then three **caps** are applied. Each lowers the level to at most 1, whatever the rows above said:
+Then three **caps** are applied, whatever the rows above said. The rain caps lower the level to at most 1, the overcast cap to at most 1 after rain and to at most 2 in dry weather:
 
 | Cap | Condition | Reason |
 | :--- | :--- | :--- |
-| Overcast | $S < 20\ \%$ (fallback: $B < 0.6$) | little sun, little natural disinfection, also without rain |
+| Overcast after rain | $S < 20\ \%$ (fallback: $B < 0.6$) and $I \ge 0.5$ | little sun, little natural disinfection of what the rain washed in: level 1 |
+| Overcast, dry | $S < 20\ \%$ (fallback: $B < 0.6$) and $I < 0.5$ | nothing new washed in, slower die-off only: level 2 at most |
 | Extreme rain impact | $I \ge 5.0$ | large overflow volume |
 | Immediate runoff | $R_0 \ge 2.0$ | rain within the last 24 hours; even strong sun does not disinfect the surface runoff quickly enough |
 
@@ -272,7 +279,7 @@ All numbers come from the real test data (`tests/backend/fixtures/`).
 **Example 1: Monday 12 Oct 2026, 08:00 UTC. Dry, but grey.**
 - Rain: $R_0 = 0.0$, $R_1 = 1.4$, $R_2 = 1.0$ mm, weighted $I = 0.84$ mm.
 - Radiation: 72 h mean 86 W/m², $B = 0.51$. Sunshine: $S = 13\ \%$ (the three days had 19 %, 3 % and 9 %).
-- Water Quality: $I \ge 0.5$ so not level 3; $I < 3.5$ and $R_0 < 1.5$ gives level 2. **Cap:** $S < 20\ \%$ (overcast), so level 1.
+- Water Quality: $I \ge 0.5$ so not level 3; $I < 3.5$ and $R_0 < 1.5$ gives level 2. **Cap:** $S < 20\ \%$ (overcast) and $I \ge 0.5$ (not dry), so level 1.
 - Safety: 18.1 °C gives level 3. Recommendation: **1, discouraged.**
 
 **Example 2: Friday 9 Oct 2026, 08:00 UTC. The day after the heavy rain of 8 Oct (28.6 mm).**
@@ -302,6 +309,8 @@ All numbers come from the real test data (`tests/backend/fixtures/`).
 | 2026-10-12 | **Radiation hourly** instead of daily | no delay of one day, same 72 hours as the rain |
 | 2026-10-12 | **Overcast rule on sunshine share** instead of radiation | see 4.3. Interim until the Cantonal Laboratory's data allows a calibration |
 | 2026-10-13 | **Data holes are no longer calculated** | the deploy at 01:43 UTC saw a day without data (12 Oct) because the MeteoSwiss `recent` file is only updated at about 02:48 UTC. The missing sunny day was ignored, three grey days remained: sunshine 6 %, "overcast", "Discouraged". The site showed that result until the next run, hours later. Now an incomplete window stops the calculation and the site keeps its last good version. The fallback to the data files of the original repository was removed: it used the old, faulty model |
+| 2026-11-16 | **Overcast in dry weather caps at "good"** instead of "discouraged" | see 4.3 |
+| 2026-11-16 | **No calculation on missing or old inputs** | water temperature missing (was replaced by 0 °C) or older than 6 h, weather data older than 3 h (was only a log warning), a missing rain hour in the last 24 h (counted as 0 mm): the run now stops with exit code 3 and the site keeps its version. The page marks itself as outdated after 6 h |
 
 The 22 °C cap and the overcast rule were both justified with laboratory statements. The first was refuted by the laboratory itself, the second could not be verified by us.
 
@@ -327,7 +336,7 @@ The 22 °C cap and the overcast rule were both justified with laboratory stateme
 
 - **Code:** `data/quality.py` is pure (no network, no file access). `data/aggregation.py` downloads the data and writes the JSON files, it only runs when executed directly.
 - **Tests:** `PYTHONPATH=./data pytest tests/backend/`
-  - `test_aggregation.py`: decision matrix and indices;
+  - `test_aggregation.py`: decision matrix and indices; `fetch_quality` stops on a missing or old water temperature, old weather data and a missing rain hour in the last 24 hours;
   - `test_quality_inputs.py`: parsing, windows, smooth weights, daily series, radiation, sunshine, overcast rule, using **real hourly data of 6-12 Oct 2026** (`tests/backend/fixtures/meteoswiss_bas_hourly_2026-10-06_to_12.csv`). Among them: weights without jumps and with preserved calibration, the astronomical possible sunshine against the official MeteoSwiss values, the sunshine share against the official daily values, and the fixed rain cases (dry day after rain, the heavy rain of 8 Oct).
 - **Frontend:** `npm run test:unit`, `npm run test:e2e` (Playwright).
 - **Run the data update:** `pip install -r data/requirements.txt && python data/aggregation.py` (from the repository root), then `npm run build`.
@@ -343,12 +352,14 @@ The 22 °C cap and the overcast rule were both justified with laboratory stateme
 | `RAIN_HALF_LIFE_H` / `RAIN_TAPER_H` / `_RAIN_SCALE_SHIFT_H` | 24 h / 12 h / 11.5 h | `quality.py` |
 | `RAD_THRESHOLD` | 170 W/m² | `quality.py` |
 | `OVERCAST_SUNSHINE` | 0.20 | `quality.py` |
+| `DRY_IMPACT` | 0.5 mm | `quality.py` |
 | `SUN_MIN_ELEVATION_DEG` | 5° | `quality.py` |
 | `STATION_LAT` / `STATION_LON` | 47.5408 / 7.5835 | `quality.py` |
 | Rain rules | 0.5, 1.0, 1.5, 2.0, 3.5, 5.0 mm | `calculate_quality` |
 | Bonus $B$ | > 1.0 and > 1.2; fallback overcast < 0.6 | `calculate_quality` |
 | Safety | 14 °C and 18 °C | `calculate_quality` |
-| `RAIN_STALE_AFTER` | 3 h | `aggregation.py` |
+| `RAIN_STALE_AFTER` / `WATER_STALE_AFTER` | 3 h / 6 h | `aggregation.py` |
+| `STALE_AFTER_HOURS` (warning on the page) | 6 h | `SwimPrognosis.astro` |
 | `MAX_MISSING_HOURS` | 3 h per series and 72 h window | `quality.py` |
 | `EXIT_INCOMPLETE` | exit code 3 | `aggregation.py` |
 

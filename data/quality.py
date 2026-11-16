@@ -22,6 +22,9 @@ WINDOW_HOURS = 72
 # depend on the season.
 OVERCAST_SUNSHINE = 0.20
 
+# Rain impact (mm) below which the last 72 hours count as dry
+DRY_IMPACT = 0.5
+
 
 def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impact=None, sunshine_fraction=None):
     """Compute the swim recommendation.
@@ -51,7 +54,7 @@ def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impac
     quality_index = 1
 
     # Excellent (Level 3)
-    if rain_impact < 0.5 or (r0 < 1.0 and rain_impact < 2.0 and rad_bonus > 1.2):
+    if rain_impact < DRY_IMPACT or (r0 < 1.0 and rain_impact < 2.0 and rad_bonus > 1.2):
         quality_index = 3
     # Good (Level 2)
     elif (rain_impact < 3.5 and r0 < 1.5) or (r0 < 1.5 and rain_impact < 5.0 and rad_bonus > 1.0):
@@ -63,8 +66,11 @@ def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impac
         overcast = sunshine_fraction < OVERCAST_SUNSHINE
     else:
         overcast = rad_bonus < 0.6  # fallback: mean radiation < 0.6 x 170 W/m²
+    # Dry and overcast: no new germs wash in, they only die off more slowly -> "good" at best.
+    # Overcast after rain: discouraged, as before.
+    dry = rain_impact < DRY_IMPACT
     if overcast:
-        quality_index = min(quality_index, 1)
+        quality_index = min(quality_index, 2 if dry else 1)
     if rain_impact >= 5.0: # Extreme Rain Impact
         quality_index = min(quality_index, 1)
     if r0 >= 2.0: # Immediate Active Runoff (even if bonus is high, surface disinfection isn't enough)
@@ -79,9 +85,9 @@ def calculate_quality(rain_week, global_radiation, water_temp_latest, rain_impac
 
     # Why the water quality is what it is (codes, the website writes the sentences)
     if quality_index == 3:
-        reasons = ['dry' if rain_impact < 0.5 else 'sun']
+        reasons = ['dry' if dry else 'sun']
     elif quality_index == 2:
-        reasons = ['lightRain']
+        reasons = ['overcastDry' if overcast and dry else 'lightRain']
     else:
         reasons = [name for name, active in (('overcast', overcast),
                                              ('rainHigh', rain_impact >= 5.0),
@@ -356,6 +362,28 @@ def daily_sunshine_series(sunshine, end, days, min_hours=18):
     values = [min(100, round(100 * shone[d] / possible[d])) if count.get(d, 0) >= min_hours and possible[d] else None
               for d in dates]
     return values, [d.isoformat() for d in dates]
+
+
+# --- Freshness of the inputs --------------------------------------------------
+
+def newest_valid(records, value_field, time_field):
+    """(value, time stamp) of the first record (newest first) that has a value, or (None, None)."""
+    for record in records:
+        fields = record['record']['fields']
+        if fields.get(value_field) is not None and fields.get(time_field):
+            return fields[value_field], fields[time_field]
+    return None, None
+
+
+def age(timestamp, now):
+    """Age of an ISO time stamp (or datetime) as timedelta; None if there is none."""
+    if timestamp is None:
+        return None
+    if isinstance(timestamp, str):
+        timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return now - timestamp
 
 
 # --- Change detection ---------------------------------------------------------

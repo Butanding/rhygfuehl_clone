@@ -39,6 +39,21 @@ test.describe('Home Page', () => {
     await expect(prognosisHeader).toBeHidden();
   });
 
+  test('marks the swim recommendation as outdated when its data is old', async ({ page }) => {
+    await page.goto('/?experiment=on');
+    const tile = page.locator('.prognosis-tile');
+    const updated = Date.parse((await tile.getAttribute('data-last-update')) ?? '');
+    const badge = tile.getByText('Veraltet', { exact: true });
+
+    await page.clock.install({ time: new Date(updated + 2 * 3600 * 1000) });
+    await page.goto('/?experiment=on');
+    await expect(badge).toBeHidden();
+
+    await page.clock.setFixedTime(new Date(updated + 7 * 3600 * 1000));
+    await page.goto('/?experiment=on');
+    await expect(badge).toBeVisible();
+  });
+
   test('experiment mode can be set with a link parameter', async ({ page }) => {
     await page.goto('/?experiment=on');
     await expect(page.getByRole('heading', { name: /Bade-Empfehlung/i }).first()).toBeVisible();

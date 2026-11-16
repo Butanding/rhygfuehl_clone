@@ -45,6 +45,8 @@
     "prognosisGood": "Good",
     "prognosisDiscouraged": "Discouraged",
     "prognosisDisclaimer": "Automated estimate from the weather and temperature data of the last 72 hours, not a laboratory measurement. Swim at your own risk.",
+    "prognosisStale": "The measurements are more than 6 hours old. The recommendation may be out of date.",
+    "prognosisStaleBadge": "Outdated",
     "prognosisBoxTitle": "Notice",
     "prognosisBoxDetails": "Details on the calculation",
     "prognosisDescription": "This recommendation is based on precipitation, sunshine, global radiation, and water temperature (safety & hygiene) over the last 72 hours.",
@@ -64,6 +66,8 @@
         "lightRain": "Some rain in the last 72 hours (weighted %i% mm).",
         "overcast": "Overcast: only %s% % of the possible sunshine duration in 72 hours (below 20 % counts as overcast).",
         "overcastRadiation": "Overcast: very little radiation in the last 72 hours.",
+        "overcastDry": "Hardly any rain, but overcast: only %s% % of the possible sunshine duration in 72 hours. Germs break down more slowly.",
+        "overcastDryRadiation": "Hardly any rain, but overcast: very little radiation in the last 72 hours. Germs break down more slowly.",
         "rainHigh": "A lot of rain in the last 72 hours (weighted %i% mm, discouraged from 5 mm).",
         "rainRecent": "Rain in the last 24 hours: %r0% mm (discouraged from 2 mm).",
         "rainModerate": "Too much rain in the last 72 hours (weighted %i% mm)."

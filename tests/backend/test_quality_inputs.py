@@ -15,6 +15,8 @@ from quality import (
     hourly_series,
     missing_hours,
     newest_hour,
+    newest_valid,
+    age,
     parse_hourly,
     possible_sunshine_minutes,
     radiation_mean,
@@ -206,13 +208,13 @@ def test_quality_accepts_hourly_radiation_and_a_given_rain_impact():
     assert calculate_quality([0, 0, 0], sunny, 20.0, rain_impact=5.0)['quality'] == 1
 
 
-def test_overcast_rule_is_unchanged_with_hourly_radiation():
-    # Cantonal Laboratory: overcast skies are bad even without rain. 72h mean 85 W/m² = 0.5 x 170
+def test_overcast_rule_with_hourly_radiation():
+    # Overcast and dry: "good" at best. 72h mean 85 W/m² = 0.5 x 170
     dark = [85.0] * 72
-    assert calculate_quality([0, 0, 0], dark, 20.0, rain_impact=0.0)['quality'] == 1
+    assert calculate_quality([0, 0, 0], dark, 20.0, rain_impact=0.0)['quality'] == 2
     # the same mean made of a dark night and a bright day is just as "overcast"
     mixed = ([0.0] * 12 + [170.0] * 12) * 3
-    assert calculate_quality([0, 0, 0], mixed, 20.0, rain_impact=0.0)['quality'] == 1
+    assert calculate_quality([0, 0, 0], mixed, 20.0, rain_impact=0.0)['quality'] == 2
     # 72h mean 105 W/m² = 0.62 x 170: no penalty
     assert calculate_quality([0, 0, 0], [105.0] * 72, 20.0, rain_impact=0.0)['quality'] == 3
 
@@ -222,7 +224,7 @@ def test_quality_ignores_missing_radiation():
     # Only some (sunny) hours available: mean over what we have
     assert calculate_quality(dry, [200, None, None], 20.0)['quality'] == 3
     # No radiation data at all: conservative, same as an overcast sky
-    assert calculate_quality(dry, [None, None, None], 20.0)['quality'] == 1
+    assert calculate_quality(dry, [None, None, None], 20.0)['quality'] == 2
 
 
 def test_real_data_after_the_heavy_rain_and_four_days_later():
@@ -297,7 +299,13 @@ def test_overcast_rule_uses_the_sunshine_share_when_available():
     dark = [85.0] * 72  # mean radiation 85 W/m² = 0.5 x 170
     # little sun: capped, even if the radiation is high
     assert calculate_quality(dry, [250.0] * 72, 20.0, rain_impact=0.0,
-                             sunshine_fraction=OVERCAST_SUNSHINE - 0.01)['quality'] == 1
+                             sunshine_fraction=OVERCAST_SUNSHINE - 0.01)['quality'] == 2
+    # overcast after rain: discouraged. The same rain under a sunny sky would be "good"
+    assert calculate_quality([1.0, 0, 0], [250.0] * 72, 20.0, rain_impact=1.0, sunshine_fraction=0.1)['quality'] == 1
+    assert calculate_quality([1.0, 0, 0], dark, 20.0, rain_impact=1.0, sunshine_fraction=0.5)['quality'] == 2
+    # "dry" ends at a rain impact of 0.5 mm
+    assert calculate_quality(dry, dark, 20.0, rain_impact=0.49, sunshine_fraction=0.1)['quality'] == 2
+    assert calculate_quality(dry, dark, 20.0, rain_impact=0.5, sunshine_fraction=0.1)['quality'] == 1
     # enough sun: no cap, although the radiation of a low autumn/winter sun is below 102 W/m²
     assert calculate_quality(dry, dark, 20.0, rain_impact=0.0, sunshine_fraction=OVERCAST_SUNSHINE)['quality'] == 3
     assert calculate_quality(dry, dark, 20.0, rain_impact=0.0, sunshine_fraction=0.9)['overcast'] is False
@@ -352,6 +360,24 @@ def test_data_fingerprint_changes_with_any_time_stamp():
     assert '-' in base  # missing time stamps do not break it
 
 
+# --- freshness of the inputs --------------------------------------------------
+
+def test_newest_valid_skips_empty_values():
+    rec = lambda value, t: {'record': {'fields': {'temp': value, 'time': t}}}
+    assert newest_valid([rec(None, 't3'), rec(None, 't2'), rec(12.5, 't1')], 'temp', 'time') == (12.5, 't1')
+    assert newest_valid([rec(0.0, 't3')], 'temp', 'time') == (0.0, 't3')  # 0 °C is a value
+    assert newest_valid([rec(None, 't3')], 'temp', 'time') == (None, None)
+    assert newest_valid([], 'temp', 'time') == (None, None)
+
+
+def test_age_of_time_stamps():
+    now = utc(2026, 11, 12, 13, 0)
+    assert age('2026-11-12T10:00:00+00:00', now) == timedelta(hours=3)
+    assert age('2026-11-12T12:30:00Z', now) == timedelta(minutes=30)
+    assert age('2026-11-12T12:00:00.500Z', now) < timedelta(hours=1)
+    assert age(None, now) is None
+
+
 # --- reasons shown on the website ---------------------------------------------
 
 def test_reasons_explain_the_water_quality():
@@ -359,7 +385,8 @@ def test_reasons_explain_the_water_quality():
     assert calculate_quality([0, 0, 0], sunny, 20.0, rain_impact=0.0, sunshine_fraction=0.7)['reasons'] == ['dry']
     assert calculate_quality([0.8, 0, 0], sunny, 20.0, rain_impact=0.8, sunshine_fraction=0.7)['reasons'] == ['sun']
     assert calculate_quality([0.2, 1.0, 0], [100.0] * 72, 20.0, rain_impact=0.7, sunshine_fraction=0.7)['reasons'] == ['lightRain']
-    assert calculate_quality([0, 0, 0], sunny, 20.0, rain_impact=0.0, sunshine_fraction=0.1)['reasons'] == ['overcast']
+    assert calculate_quality([0, 0, 0], sunny, 20.0, rain_impact=0.0, sunshine_fraction=0.1)['reasons'] == ['overcastDry']
+    assert calculate_quality([1.0, 0, 0], sunny, 20.0, rain_impact=1.0, sunshine_fraction=0.1)['reasons'] == ['overcast']
     assert calculate_quality([2.5, 0, 0], sunny, 20.0, rain_impact=2.5, sunshine_fraction=0.7)['reasons'] == ['rainRecent']
     assert calculate_quality([6.0, 0, 0], sunny, 20.0, rain_impact=6.0, sunshine_fraction=0.1)['reasons'] == ['overcast', 'rainHigh', 'rainRecent']
     assert calculate_quality([1.0, 3.0, 0], [100.0] * 72, 20.0, rain_impact=3.0, sunshine_fraction=0.7)['reasons'] in (['lightRain'], ['rainModerate'])

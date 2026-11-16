@@ -45,6 +45,8 @@
     "prognosisGood": "Gut",
     "prognosisDiscouraged": "Abgeraten",
     "prognosisDisclaimer": "Automatisierte Schätzung aus den Wetter- und Temperaturdaten der letzten 72 Stunden, keine Labormessung. Baden auf eigene Gefahr.",
+    "prognosisStale": "Die Messdaten sind älter als 6 Stunden. Die Empfehlung ist möglicherweise nicht mehr aktuell.",
+    "prognosisStaleBadge": "Veraltet",
     "prognosisBoxTitle": "Hinweis",
     "prognosisBoxDetails": "Details zur Berechnung",
     "prognosisDescription": "Diese Empfehlung basiert auf Niederschlag, Sonnenschein, Globalstrahlung sowie der Wassertemperatur (Sicherheit & Hygiene) der letzten 72 Stunden.",
@@ -64,6 +66,8 @@
         "lightRain": "Etwas Regen in den letzten 72 Stunden (gewichtet %i% mm).",
         "overcast": "Bedeckt: nur %s% % der möglichen Sonnenscheindauer in 72 Stunden (unter 20 % gilt als bedeckt).",
         "overcastRadiation": "Bedeckt: sehr wenig Strahlung in den letzten 72 Stunden.",
+        "overcastDry": "Kaum Regen, aber bedeckt: nur %s% % der möglichen Sonnenscheindauer in 72 Stunden. Keime bauen sich langsamer ab.",
+        "overcastDryRadiation": "Kaum Regen, aber bedeckt: sehr wenig Strahlung in den letzten 72 Stunden. Keime bauen sich langsamer ab.",
         "rainHigh": "Viel Regen in den letzten 72 Stunden (gewichtet %i% mm, ab 5 mm abgeraten).",
         "rainRecent": "Regen in den letzten 24 Stunden: %r0% mm (ab 2 mm abgeraten).",
         "rainModerate": "Zu viel Regen in den letzten 72 Stunden (gewichtet %i% mm)."

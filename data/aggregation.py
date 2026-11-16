@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 
 from quality import (  # noqa: F401  (calculate_quality is re-exported for the tests)
@@ -10,6 +11,7 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     SUNSHINE_COLUMN,
     MAX_MISSING_HOURS,
     WINDOW_HOURS,
+    age,
     calculate_quality,
     daily_radiation_series,
     daily_sunshine_series,
@@ -19,6 +21,7 @@ from quality import (  # noqa: F401  (calculate_quality is re-exported for the t
     hourly_series,
     missing_hours,
     newest_hour,
+    newest_valid,
     parse_hourly,
     radiation_mean,
     rain_impact,
@@ -35,10 +38,15 @@ AIR_STATION_ID = '034003A7'  # Rheinpromenade 2
 # MeteoSwiss open data, station Basel-Binningen (BAS): hourly precipitation and global radiation.
 # "recent" = 1 Jan of this year until yesterday, "now" = today.
 METEOSWISS = 'https://data.geo.admin.ch/ch.meteoschweiz.ogd-smn/bas/ogd-smn_bas_h_'
+# Older inputs than this are not used for a recommendation (nothing is published, the site keeps
+# its current version and the page itself warns once that version is too old).
 RAIN_STALE_AFTER = timedelta(hours=3)
+WATER_STALE_AFTER = timedelta(hours=6)
 
 # Exit code: the weather data has a hole right now. The site keeps its current version (see the workflow).
 EXIT_INCOMPLETE = 3
+
+RETRIES = 4
 
 
 def updateJsonFile( path, data ):
@@ -46,22 +54,26 @@ def updateJsonFile( path, data ):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 
+def _get(url, timeout, **kwargs):
+    """GET with a few retries: the data portals reset a connection now and then."""
+    for attempt in range(RETRIES):
+        try:
+            resp = requests.get(url=url, timeout=timeout, **kwargs)
+            resp.raise_for_status()
+            return resp
+        except requests.exceptions.RequestException as e:
+            if attempt == RETRIES - 1:
+                raise SystemExit(e)
+            print(f'request failed ({e.__class__.__name__}), retrying')
+            time.sleep(2 * (attempt + 1))
+
+
 def get_json(url, **kwargs):
-    try:
-        resp = requests.get(url=url, timeout=30, **kwargs)
-        resp.raise_for_status()
-        return resp.json()
-    except requests.exceptions.RequestException as e:
-        raise SystemExit(e)
+    return _get(url, 30, **kwargs).json()
 
 
 def get_text(url):
-    try:
-        resp = requests.get(url=url, timeout=60)
-        resp.raise_for_status()
-        return resp.content.decode('utf-8-sig')
-    except requests.exceptions.RequestException as e:
-        raise SystemExit(e)
+    return _get(url, 60).content.decode('utf-8-sig')
 
 
 def fetch_hourly(now):
@@ -93,20 +105,13 @@ def add_chart(target, name, url, field):
 def fetch_water():
     # Actual temperature
     waterData = {}
-    d = get_json(f'{API}/100046/records?order_by=endezeitpunkt%20DESC&limit=2&pretty=false&timezone=UTC')
+    d = get_json(f'{API}/100046/records?order_by=endezeitpunkt%20DESC&limit=50&pretty=false&timezone=UTC')
 
-    if d['records'][0]['record']['fields']['rus_w_o_s3_te'] is not None:
-        waterData['actualValue'] = d['records'][0]['record']['fields']['rus_w_o_s3_te']
-        waterData['lastUpdate'] = d['records'][0]['record']['fields']['endezeitpunkt']
-    else:
-        print('newest temp is null we take next older one')
-        if d['records'][1]['record']['fields']['rus_w_o_s3_te'] is not None:
-            waterData['actualValue'] = d['records'][1]['record']['fields']['rus_w_o_s3_te']
-            waterData['lastUpdate'] = d['records'][1]['record']['fields']['endezeitpunkt']
-        else:
-            print('no valid temp')
-            waterData['actualValue'] = 0
-            waterData['lastUpdate'] = None
+    # Newest value that is not empty. None if the station delivered nothing usable:
+    # fetch_quality() then refuses to calculate (a made-up 0 °C would read "discouraged").
+    waterData['actualValue'], waterData['lastUpdate'] = newest_valid(d['records'], 'rus_w_o_s3_te', 'endezeitpunkt')
+    if waterData['actualValue'] is None:
+        print('no valid water temperature in the newest 50 records')
 
     waterData['chart'] = {}
     # Weekly data (12h buckets, oldest first)
@@ -178,7 +183,13 @@ def fetch_quality(waterData, now=None):
     if end is None:
         raise SystemExit('no rain data available')
     if now - end > RAIN_STALE_AFTER:
-        print(f'warning: newest rain value is from {end:%Y-%m-%d %H:%M} UTC, the feed seems to be late')
+        print(f'weather data too old: newest rain value is from {end:%Y-%m-%d %H:%M} UTC. Nothing is published now.')
+        raise SystemExit(EXIT_INCOMPLETE)
+    # The water temperature decides the safety index: no value or an old one -> no recommendation.
+    water_age = age(waterData.get('lastUpdate'), now)
+    if waterData.get('actualValue') is None or water_age is None or water_age > WATER_STALE_AFTER:
+        print(f"water temperature missing or too old (last value: {waterData.get('lastUpdate')}). Nothing is published now.")
+        raise SystemExit(EXIT_INCOMPLETE)
     # A hole in the data (e.g. a whole day, right after midnight UTC) makes every result wrong: stop here.
     holes = missing_hours([rain, radiation, sunshine], end)
     if max(holes) > MAX_MISSING_HOURS:
@@ -194,6 +205,10 @@ def fetch_quality(waterData, now=None):
     rad_hours, _ = hourly_series(radiation, end, WINDOW_HOURS)
     rad_mean, rad_missing = radiation_mean(radiation, end)
     sun_share, sun_missing = sunshine_fraction(sunshine, end)
+    # A missing hour counts as 0 mm. In the last 24 hours that could hide the very rain that matters.
+    if rain_missing[0]:
+        print(f'rain: {rain_missing[0]} hour(s) of the last 24 hours missing. Nothing is published now.')
+        raise SystemExit(EXIT_INCOMPLETE)
     if any(rain_missing):
         print(f'rain: missing hours per 24h window {rain_missing}, counting as 0 mm')
     if rad_missing:
@@ -203,7 +218,7 @@ def fetch_quality(waterData, now=None):
     elif sun_missing:
         print(f'sunshine: {sun_missing} of {WINDOW_HOURS} hours missing, ignoring them')
 
-    waterTempLatest = waterData.get('actualValue', 0)
+    waterTempLatest = waterData['actualValue']
     prognosis = calculate_quality(rain_inputs, rad_hours, waterTempLatest, rain_impact=impact, sunshine_fraction=sun_share)
 
     windows = {'last24h': rain_inputs[0], 'from24to48h': rain_inputs[1], 'from48to72h': rain_inputs[2]}
