@@ -40,6 +40,10 @@ https://github.com/Butanding/rhygfuehl_clone/compare/upstream...main
   mehr als einer, ein zweiter wartet. Einmal von Hand starten: Actions → Keep fresh → Run workflow.
   Abschalten: den Workflow in den Actions deaktivieren. Hinweis: Der Lauf ist dauernd aktiv; in
   einem öffentlichen Repository kostet das nichts, in einem privaten zählt es zu den Freiminuten.
+- **Störungs-Log:** `data/health.py` schreibt bei jedem Statuswechsel einer Datenquelle (verspätet,
+  ausgefallen, Lücke, Abruf fehlgeschlagen, wieder gut) eine Zeile in eine CSV-Datei, siehe
+  `docs/prognosis-logic.md`. Die Logik ist unabhängig von GitHub. Der Deploy-Workflow bewahrt die
+  Datei nur zwischen den Läufen auf: auf dem Branch `health-log` (Datei `health-log.csv`).
 - **Sync from upstream:** täglich. Aktualisiert `upstream` und merged es in `main`.
   Bei einem Merge-Konflikt schlägt der Job fehl (GitHub schickt eine Mail). Dann lokal:
   `git fetch origin && git checkout main && git merge origin/upstream`, Konflikte lösen, pushen.

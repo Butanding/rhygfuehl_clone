@@ -4,6 +4,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
+import health
 from quality import (  # noqa: F401  (calculate_quality is re-exported for the tests)
     LOCAL_TZ,
     RADIATION_COLUMN,
@@ -45,6 +46,26 @@ WATER_STALE_AFTER = timedelta(hours=6)
 
 # Exit code: the weather data has a hole right now. The site keeps its current version (see the workflow).
 EXIT_INCOMPLETE = 3
+
+
+class Incomplete(SystemExit):
+    """The inputs do not allow a recommendation right now (ends the script with EXIT_INCOMPLETE)."""
+
+    def __init__(self, source, status, detail):
+        super().__init__(EXIT_INCOMPLETE)
+        self.source, self.status, self.detail = source, status, detail
+
+
+# Health log (see health.py): a source counts as "delayed" when its newest value is older than this.
+# Usual ages: water, air and level under an hour, the weather hour up to about two hours.
+DELAYED_AFTER = {'water': timedelta(hours=2), 'air': timedelta(hours=2), 'level': timedelta(hours=2),
+                 'weather': timedelta(hours=2, minutes=30)}
+# ... and as "outage" after this (water and weather: no recommendation is calculated then)
+OUTAGE_AFTER = {'water': WATER_STALE_AFTER, 'air': timedelta(hours=6), 'level': timedelta(hours=6),
+                'weather': RAIN_STALE_AFTER}
+# Every night until about 02:50 UTC yesterday is missing in the MeteoSwiss files. That gap is
+# expected and not logged; a gap at or after this hour (UTC) is.
+NIGHTLY_GAP_UNTIL_HOUR_UTC = 4
 
 RETRIES = 4
 
@@ -174,41 +195,44 @@ def fetch_level():
     return levelData
 
 
-def fetch_quality(waterData, now=None):
+def fetch_quality(waterData, now=None, report=None):
+    """Calculate the recommendation. `report` (a dict) receives 'weather_end', the end of the newest hour."""
     now = now or datetime.now(timezone.utc)
 
     # Rain, global radiation and sunshine duration: hourly values of Basel-Binningen, labelled with the END of the hour
     rain, radiation, sunshine = fetch_hourly(now)
     end = newest_hour(rain)
     if end is None:
-        raise SystemExit('no rain data available')
+        raise Incomplete('weather', health.NO_VALUE, 'no rain value in the files')
+    if report is not None:
+        report['weather_end'] = end
     if now - end > RAIN_STALE_AFTER:
         print(f'weather data too old: newest rain value is from {end:%Y-%m-%d %H:%M} UTC. Nothing is published now.')
-        raise SystemExit(EXIT_INCOMPLETE)
-    # The water temperature decides the safety index: no value or an old one -> no recommendation.
-    water_age = age(waterData.get('lastUpdate'), now)
-    if waterData.get('actualValue') is None or water_age is None or water_age > WATER_STALE_AFTER:
-        print(f"water temperature missing or too old (last value: {waterData.get('lastUpdate')}). Nothing is published now.")
-        raise SystemExit(EXIT_INCOMPLETE)
+        raise Incomplete('weather', health.OUTAGE, 'newest rain value too old')
     # A hole in the data (e.g. a whole day, right after midnight UTC) makes every result wrong: stop here.
     holes = missing_hours([rain, radiation, sunshine], end)
     if max(holes) > MAX_MISSING_HOURS:
         print(f'weather data incomplete: missing hours in the 72 h window (rain, radiation, sunshine): {holes}. '
               'The source files are updated with a delay; nothing is published now.')
-        raise SystemExit(EXIT_INCOMPLETE)
+        raise Incomplete('weather', health.GAP, f'missing hours in 72 h (rain/radiation/sunshine): {"/".join(map(str, holes))}')
+    # A missing hour counts as 0 mm. In the last 24 hours that could hide the very rain that matters.
+    rain_inputs, rain_missing = rain_windows(rain, end)  # [R0, R1, R2]
+    if rain_missing[0]:
+        print(f'rain: {rain_missing[0]} hour(s) of the last 24 hours missing. Nothing is published now.')
+        raise Incomplete('weather', health.GAP, f'{rain_missing[0]} rain hour(s) of the last 24 h missing')
+    # The water temperature decides the safety index: no value or an old one -> no recommendation.
+    water_age = age(waterData.get('lastUpdate'), now)
+    if waterData.get('actualValue') is None or water_age is None or water_age > WATER_STALE_AFTER:
+        print(f"water temperature missing or too old (last value: {waterData.get('lastUpdate')}). Nothing is published now.")
+        raise Incomplete('water', health.NO_VALUE if water_age is None else health.OUTAGE, 'water temperature missing or too old')
     # The recommendation is as fresh as the newest hour.
     last_update = end.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # Recommendation inputs: the same 72 hours for rain and radiation
-    rain_inputs, rain_missing = rain_windows(rain, end)  # [R0, R1, R2]
     impact = rain_impact(rain, end)
     rad_hours, _ = hourly_series(radiation, end, WINDOW_HOURS)
     rad_mean, rad_missing = radiation_mean(radiation, end)
     sun_share, sun_missing = sunshine_fraction(sunshine, end)
-    # A missing hour counts as 0 mm. In the last 24 hours that could hide the very rain that matters.
-    if rain_missing[0]:
-        print(f'rain: {rain_missing[0]} hour(s) of the last 24 hours missing. Nothing is published now.')
-        raise SystemExit(EXIT_INCOMPLETE)
     if any(rain_missing):
         print(f'rain: missing hours per 24h window {rain_missing}, counting as 0 mm')
     if rad_missing:
@@ -299,12 +323,68 @@ def fetch_quality(waterData, now=None):
     return qualityData
 
 
-def main():
-    waterData = fetch_water()
-    airData = fetch_air()
-    levelData = fetch_level()
-    qualityData = fetch_quality(waterData)
+def _parse_time(timestamp):
+    if not timestamp:
+        return None
+    return datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
 
+
+def main(now=None):
+    now = now or datetime.now(timezone.utc)
+    results, states, failure = {}, {}, None
+
+    # Every source is fetched even if another one fails, so the health log sees all of them.
+    for source, fetch in (('water', fetch_water), ('air', fetch_air), ('level', fetch_level)):
+        try:
+            results[source] = fetch()
+        except SystemExit as e:  # download failed after all retries
+            states[source] = {'status': health.DOWNLOAD_FAILED, 'detail': e}
+            failure = failure or e
+        except Exception as e:  # unexpected answer
+            states[source] = {'status': health.ERROR, 'detail': f'{e.__class__.__name__}: {e}'}
+            failure = failure or e
+        else:
+            updated = _parse_time(results[source].get('lastUpdate'))
+            states[source] = {
+                'status': health.status_by_age(age(updated, now), DELAYED_AFTER[source], OUTAGE_AFTER[source]),
+                'data_time': updated,
+            }
+
+    qualityData, report, nightly_gap = None, {}, False
+    if 'water' in results:
+        try:
+            qualityData = fetch_quality(results['water'], now=now, report=report)
+        except Incomplete as e:
+            failure = failure or e
+            if e.source == 'weather':
+                nightly_gap = e.status == health.GAP and now.hour < NIGHTLY_GAP_UNTIL_HOUR_UTC
+                if not nightly_gap:
+                    states['weather'] = {'status': e.status, 'detail': e.detail, 'data_time': report.get('weather_end')}
+        except SystemExit as e:
+            states['weather'] = {'status': health.DOWNLOAD_FAILED, 'detail': e}
+            failure = failure or e
+        except Exception as e:
+            states['weather'] = {'status': health.ERROR, 'detail': f'{e.__class__.__name__}: {e}'}
+            failure = failure or e
+        # The weather checks passed (or only the water temperature stopped the calculation): judge by age
+        if 'weather' not in states and not nightly_gap and 'weather_end' in report:
+            end = report['weather_end']
+            states['weather'] = {
+                'status': health.status_by_age(now - end, DELAYED_AFTER['weather'], OUTAGE_AFTER['weather']),
+                'data_time': end,
+            }
+
+    # The log must never break the data update.
+    try:
+        for row in health.record(now, states):
+            print(f"health log: {row['source']} {row['previous_status']} -> {row['status']} {row['detail']}".rstrip())
+    except Exception as e:
+        print(f'health log could not be written: {e}')
+
+    if failure is not None:
+        raise failure
+
+    waterData, airData, levelData = results['water'], results['air'], results['level']
     # Changes whenever any of the data got a newer time stamp. The Pages workflow publishes it next
     # to the site and skips a scheduled run if the published site already has the same fingerprint.
     fingerprint = data_fingerprint(qualityData['lastUpdate'], waterData['lastUpdate'],

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 import aggregation
+import health
 from aggregation import calculate_quality
 
 def test_safety_index_thresholds():
@@ -140,3 +141,92 @@ def test_fetch_quality_stops_on_a_missing_rain_hour_in_the_last_24_hours(monkeyp
     assert stop.value.code == aggregation.EXIT_INCOMPLETE
     # an older missing hour (24-72 h ago) still counts as 0 mm
     assert _run(monkeypatch, now, _hourly(end, rain_gap=30), water)['quality'] == 3
+
+
+# --- health log: main() records which source had a problem -----------------------
+
+def _main(monkeypatch, tmp_path, now, hourly, water, air=None, level=None):
+    """Run aggregation.main() without network. A fetch given as an exception raises it."""
+    fresh = (now - timedelta(minutes=20)).isoformat()
+    def source(value):
+        def fetch():
+            if isinstance(value, BaseException):
+                raise value
+            return value
+        return fetch
+    monkeypatch.setattr(aggregation, 'fetch_water', source(water))
+    monkeypatch.setattr(aggregation, 'fetch_air', source(air or {'actualValue': 15.0, 'lastUpdate': fresh}))
+    monkeypatch.setattr(aggregation, 'fetch_level', source(level or {'actualValue': 0.1, 'lastUpdate': fresh}))
+    monkeypatch.setattr(aggregation, 'fetch_hourly', lambda _now: hourly)
+    monkeypatch.setattr(aggregation, 'updateJsonFile', lambda path, data: None)
+    monkeypatch.setattr(aggregation, 'DATA_DIR', str(tmp_path))
+    log = tmp_path / 'health-log.csv'
+    monkeypatch.setenv('HEALTH_LOG', str(log))
+    try:
+        aggregation.main(now=now)
+        code = 0
+    except SystemExit as e:
+        code = e.code
+    return code, health.read_log(str(log))
+
+
+def test_main_logs_nothing_when_all_sources_are_fine(monkeypatch, tmp_path):
+    now = datetime(2026, 7, 10, 12, 20, tzinfo=timezone.utc)
+    water = {'actualValue': 21.0, 'lastUpdate': '2026-07-10T12:00:00+00:00'}
+    code, rows = _main(monkeypatch, tmp_path, now, _hourly(now.replace(minute=0)), water)
+    assert code == 0 and rows == []
+    assert (tmp_path / 'fingerprint.txt').exists()
+
+
+def test_main_logs_an_outage_once_and_its_end(monkeypatch, tmp_path):
+    now = datetime(2026, 7, 10, 12, 20, tzinfo=timezone.utc)
+    end = now.replace(minute=0)
+    old_water = {'actualValue': 21.0, 'lastUpdate': '2026-07-10T05:00:00+00:00'}
+    code, rows = _main(monkeypatch, tmp_path, now, _hourly(end), old_water)
+    assert code == aggregation.EXIT_INCOMPLETE
+    assert [(r['source'], r['status'], r['previous_status']) for r in rows] == [('water', 'outage', 'ok')]
+    assert rows[0]['age_minutes'] == '440'
+
+    # the next run with the same problem adds no row
+    later = now + timedelta(minutes=5)
+    code, rows = _main(monkeypatch, tmp_path, later, _hourly(end), old_water)
+    assert len(rows) == 1
+
+    # back to normal: one row with the duration of the outage
+    back = now + timedelta(minutes=90)
+    water = {'actualValue': 21.0, 'lastUpdate': '2026-07-10T13:30:00+00:00'}
+    code, rows = _main(monkeypatch, tmp_path, back, _hourly(back.replace(hour=13, minute=0)), water)
+    assert code == 0 and len(rows) == 2
+    assert (rows[1]['status'], rows[1]['previous_status'], rows[1]['previous_minutes']) == ('ok', 'outage', '90')
+
+
+def test_main_logs_delays_gaps_and_failed_downloads(monkeypatch, tmp_path):
+    now = datetime(2026, 7, 10, 12, 20, tzinfo=timezone.utc)
+    water = {'actualValue': 21.0, 'lastUpdate': '2026-07-10T12:00:00+00:00'}
+    air = {'actualValue': 15.0, 'lastUpdate': '2026-07-10T09:00:00+00:00'}  # 3 h 20 min old
+    code, rows = _main(monkeypatch, tmp_path, now, _hourly(now.replace(minute=0), rain_gap=5), water,
+                       air=air, level=SystemExit('connection reset'))
+    assert code == 'connection reset'  # the first failure ends the script, after the log was written
+    assert {(r['source'], r['status']) for r in rows} == {
+        ('air', 'delayed'), ('level', 'download_failed'), ('weather', 'gap')}
+
+
+def test_main_does_not_log_the_nightly_gap_of_the_weather_files(monkeypatch, tmp_path):
+    water = {'actualValue': 21.0, 'lastUpdate': '2026-07-10T01:00:00+00:00'}
+    night = datetime(2026, 7, 10, 1, 20, tzinfo=timezone.utc)
+    hourly = _hourly(night.replace(minute=0), rain_gap=5)
+    code, rows = _main(monkeypatch, tmp_path, night, hourly, water)
+    assert code == aggregation.EXIT_INCOMPLETE and rows == []
+    # the same gap in the afternoon is not expected
+    water = {'actualValue': 21.0, 'lastUpdate': '2026-07-10T14:00:00+00:00'}
+    day = datetime(2026, 7, 10, 14, 20, tzinfo=timezone.utc)
+    code, rows = _main(monkeypatch, tmp_path, day, _hourly(day.replace(minute=0), rain_gap=5), water)
+    assert [(r['source'], r['status']) for r in rows] == [('weather', 'gap')]
+
+
+def test_a_broken_health_log_does_not_stop_the_update(monkeypatch, tmp_path):
+    now = datetime(2026, 7, 10, 12, 20, tzinfo=timezone.utc)
+    water = {'actualValue': 21.0, 'lastUpdate': '2026-07-10T12:00:00+00:00'}
+    monkeypatch.setattr(health, 'record', lambda *a, **k: (_ for _ in ()).throw(OSError('disk full')))
+    code, _ = _main(monkeypatch, tmp_path, now, _hourly(now.replace(minute=0)), water)
+    assert code == 0

@@ -29,7 +29,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write  # only for the branch "health-log" (see the two health log steps)
   pages: write
   id-token: write
 
@@ -54,6 +54,16 @@ jobs:
       - id: pages
         uses: actions/configure-pages@v5
 
+      # The health log (data/health.py: which source was late or failed, and for how long) is kept
+      # on the branch "health-log". The log itself is written by the aggregation; these two steps
+      # only carry the file from one run to the next.
+      - name: Restore the health log
+        run: |
+          echo "HEALTH_LOG=$RUNNER_TEMP/health-log.csv" >> "$GITHUB_ENV"
+          if git fetch -q --depth 1 origin health-log 2>/dev/null; then
+            git show FETCH_HEAD:health-log.csv > "$RUNNER_TEMP/health-log.csv" || rm -f "$RUNNER_TEMP/health-log.csv"
+          fi
+
       - name: Generate data with our aggregation
         id: aggregate
         run: |
@@ -68,6 +78,25 @@ jobs:
           fi
           if [ "$code" != "0" ]; then exit "$code"; fi
           echo "{\"timestamp\": \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\", \"version\": \"$(git rev-parse --short HEAD)-$(date -u +'%Y%m%d-%H%M')\"}" > data/data/metadata.json
+
+      - name: Save the health log
+        if: always()
+        run: |
+          [ -s "$HEALTH_LOG" ] || exit 0
+          work="$RUNNER_TEMP/health-log-branch"
+          if git fetch -q --depth 1 origin health-log 2>/dev/null; then
+            git worktree add -q --detach "$work" FETCH_HEAD
+          else
+            git worktree add -q --detach "$work"
+            git -C "$work" checkout -q --orphan health-log
+            git -C "$work" rm -rqf .
+          fi
+          cp "$HEALTH_LOG" "$work/health-log.csv"
+          cd "$work"
+          git add health-log.csv
+          if git diff --staged --quiet; then exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "health log"
+          git push -q origin HEAD:refs/heads/health-log
 
       # Nothing is published if the data has a hole, or (scheduled runs and keep-fresh.yml only) if the published
       # site already has the newest data. A push or a manual run always publishes.

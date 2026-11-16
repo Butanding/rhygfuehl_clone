@@ -332,11 +332,30 @@ The 22 °C cap and the overcast rule were both justified with laboratory stateme
 
 ---
 
+## Health log of the data sources
+
+`data/health.py` keeps a CSV log of problems of the four sources (`water`, `air`, `level`, `weather`). It is written by `aggregation.py` on every run, but only when the **status of a source changes**, so a two-day outage is two rows (start and end), and a healthy source writes nothing.
+
+| Status | Meaning |
+| :--- | :--- |
+| `ok` | back to normal (the row closes a problem; `previous_minutes` is how long it lasted) |
+| `delayed` | the newest value is older than usual (water, air, level: 2 h; weather: 2.5 h). The recommendation is still calculated |
+| `outage` | so old that no recommendation is calculated (water: 6 h, weather: 3 h) or, for air and level, older than 6 h |
+| `no_value` | the source answers but has no usable value |
+| `gap` | hours are missing in the 72 h window of the weather data. The nightly gap of the MeteoSwiss files (before 04:00 UTC) is expected and not logged |
+| `download_failed` / `error` | the request failed after all retries / the answer had an unexpected form |
+
+Columns: `time_utc, source, status, previous_status, previous_minutes, data_time_utc, age_minutes, detail`.
+
+The file is `data/health-log.csv`, or the path in the environment variable `HEALTH_LOG`. The script only appends to it; **keeping the file between runs is the job of the CI** (commit it together with the data files, or store it on a separate branch). A log that cannot be read or written never stops the data update. Because a problem usually ends the script with an error or with exit code 3, the CI step that keeps the file has to run after a failed data step as well.
+
+---
+
 ## 10. Tests, validation and how to run it
 
 - **Code:** `data/quality.py` is pure (no network, no file access). `data/aggregation.py` downloads the data and writes the JSON files, it only runs when executed directly.
 - **Tests:** `PYTHONPATH=./data pytest tests/backend/`
-  - `test_aggregation.py`: decision matrix and indices; `fetch_quality` stops on a missing or old water temperature, old weather data and a missing rain hour in the last 24 hours;
+  - `test_aggregation.py`: decision matrix and indices; the health log (one row per status change, nightly gap not logged); `fetch_quality` stops on a missing or old water temperature, old weather data and a missing rain hour in the last 24 hours;
   - `test_quality_inputs.py`: parsing, windows, smooth weights, daily series, radiation, sunshine, overcast rule, using **real hourly data of 6-12 Oct 2026** (`tests/backend/fixtures/meteoswiss_bas_hourly_2026-10-06_to_12.csv`). Among them: weights without jumps and with preserved calibration, the astronomical possible sunshine against the official MeteoSwiss values, the sunshine share against the official daily values, and the fixed rain cases (dry day after rain, the heavy rain of 8 Oct).
 - **Frontend:** `npm run test:unit`, `npm run test:e2e` (Playwright).
 - **Run the data update:** `pip install -r data/requirements.txt && python data/aggregation.py` (from the repository root), then `npm run build`.

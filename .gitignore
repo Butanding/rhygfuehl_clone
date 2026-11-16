@@ -264,3 +264,5 @@ __marimo__/
 
 # written by data/aggregation.py, only needed by the Pages workflow
 data/data/fingerprint.txt
+# written by data/aggregation.py when a data source has a problem (see data/health.py)
+data/health-log.csv
