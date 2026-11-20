@@ -2,3 +2,4 @@ time_utc,source,status,previous_status,previous_minutes,data_time_utc,age_minute
 2026-11-18T10:30:39Z,weather,delayed,ok,,2026-11-18T08:00:00Z,151,
 2026-11-18T11:00:48Z,weather,outage,delayed,30,2026-11-18T08:00:00Z,181,newest rain value too old
 2026-11-18T12:16:12Z,weather,ok,outage,75,2026-11-18T11:00:00Z,76,
+2026-11-20T18:15:21Z,water,download_failed,ok,,,,"HTTPSConnectionPool(host='data.bs.ch', port=443): Max retries exceeded with url: /api/v2/catalog/datasets/100046/records?select=avg(rus_w_o_s3_te)%20as%20temp&where=endezeitpunkt%3E%3Dnow(days%3D-7)&g"
