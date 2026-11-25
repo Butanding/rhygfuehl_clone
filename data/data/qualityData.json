@@ -1,6 +1,6 @@
 {
     "quality": 1,
-    "lastUpdate": "2026-11-24T12:42:14.323Z",
+    "lastUpdate": "2026-11-25T03:42:18.414Z",
     "indices": {
         "quality": 1,
         "safety": 1
@@ -10,13 +10,13 @@
             "measure": "globalRadiation",
             "chart": {
                 "week": [
-                    25,
                     38,
                     37,
                     43,
                     30,
                     11,
-                    9
+                    9,
+                    51
                 ],
                 "month": [
                     97.0,
@@ -33,7 +33,7 @@
                     31.5,
                     40.0,
                     20.5,
-                    9.0
+                    30.0
                 ]
             }
         },
