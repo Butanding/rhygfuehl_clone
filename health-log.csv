@@ -6,3 +6,4 @@ time_utc,source,status,previous_status,previous_minutes,data_time_utc,age_minute
 2026-11-20T18:20:19Z,water,ok,download_failed,5,2026-11-20T18:00:00Z,20,
 2026-11-25T14:19:13Z,weather,gap,ok,10203,2026-11-25T14:00:00Z,19,1 rain hour(s) of the last 24 h missing
 2026-11-25T15:09:25Z,weather,ok,gap,50,2026-11-25T14:00:00Z,69,
+2026-11-26T06:19:54Z,weather,gap,ok,910,2026-11-26T06:00:00Z,20,missing hours in 72 h (rain/radiation/sunshine): 0/4/4
