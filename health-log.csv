@@ -8,3 +8,4 @@ time_utc,source,status,previous_status,previous_minutes,data_time_utc,age_minute
 2026-11-25T15:09:25Z,weather,ok,gap,50,2026-11-25T14:00:00Z,69,
 2026-11-26T06:19:54Z,weather,gap,ok,910,2026-11-26T06:00:00Z,20,missing hours in 72 h (rain/radiation/sunshine): 0/4/4
 2026-11-26T13:52:25Z,weather,ok,gap,453,2026-11-26T13:00:00Z,52,
+2026-11-27T05:32:34Z,weather,delayed,ok,940,2026-11-27T03:00:00Z,153,
